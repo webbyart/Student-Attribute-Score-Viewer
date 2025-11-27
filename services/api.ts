@@ -52,6 +52,7 @@ export const registerStudent = async (data: any): Promise<{ success: boolean; me
 
             if (updateError) {
                  // Fallback: If update fails (e.g. ID conflict), try delete and insert
+                 // Note: Delete might fail if there are foreign keys (notifications), but for students usually ok
                  await supabase.from('profiles').delete().eq('email', data.email);
                  const { error: insertError } = await supabase.from('profiles').insert({
                     id: authData.user.id,
@@ -100,8 +101,8 @@ export const loginStudent = async (studentId: string, email: string, password?: 
         });
 
         if (authError) {
-            // 2. Auth failed. Check if the user exists in 'profiles' but not 'auth'
-            // This happens if Admin added them to DB, but they haven't "Registered" via Auth yet.
+            // 2. Auth failed. Check if the user exists in 'profiles' (Pre-seeded Data)
+            // This enables "Auto-Claiming" existing accounts using the login_code
             const { data: existingProfile } = await supabase
                 .from('profiles')
                 .select('*')
@@ -110,17 +111,53 @@ export const loginStudent = async (studentId: string, email: string, password?: 
                 .single();
 
             if (existingProfile) {
-                // Profile exists, but Auth failed.
-                // Check if they provided the correct 'student_id' before warning them
-                if (existingProfile.student_id === studentId) {
-                    throw new Error("บัญชีนี้ยังไม่ได้ลงทะเบียน กรุณาลงทะเบียนก่อนเข้าใช้งาน");
+                // Check if credentials match the pre-seeded data
+                const isIdMatch = existingProfile.student_id === studentId;
+                const isCodeMatch = existingProfile.login_code === password;
+
+                if (isIdMatch && isCodeMatch) {
+                     console.log("Auto-claiming account for:", email);
+                     // 3. Auto-Register (Claim Account)
+                     const regResult = await registerStudent({
+                         student_id: existingProfile.student_id,
+                         student_name: existingProfile.full_name,
+                         email: existingProfile.email,
+                         grade: existingProfile.grade,
+                         classroom: existingProfile.classroom,
+                         password: password
+                     });
+
+                     if (regResult.success) {
+                         // 4. Retry Login after claim
+                         const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+                             email,
+                             password
+                         });
+                         if (retryError) throw retryError;
+                         
+                         // Return User
+                         return {
+                            id: retryData.user.id,
+                            grade: existingProfile.grade,
+                            classroom: existingProfile.classroom,
+                            student_id: existingProfile.student_id,
+                            student_name: existingProfile.full_name,
+                            email: existingProfile.email,
+                            profileImageUrl: existingProfile.avatar_url || 'https://via.placeholder.com/150'
+                        };
+                     } else {
+                         throw new Error("ระบบไม่สามารถลงทะเบียนอัตโนมัติได้: " + regResult.message);
+                     }
+                } else {
+                    if (!isIdMatch) throw new Error("รหัสนักเรียนไม่ถูกต้อง");
+                    if (!isCodeMatch) throw new Error("รหัสผ่านไม่ถูกต้อง (Login Code)");
                 }
             }
             
             throw new Error("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
         }
 
-        // 3. Auth Success. Fetch Profile to verify Student ID
+        // 5. Auth Success (Standard Path)
         const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('*')
