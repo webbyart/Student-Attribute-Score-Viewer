@@ -26,6 +26,24 @@ export const TaskCategoryLabel: Record<TaskCategory, string> = {
     [TaskCategory.ACTIVITY_OUTSIDE]: 'กิจกรรมภายนอก',
 };
 
+// Helper for display colors
+export const getCategoryColor = (category: TaskCategory) => {
+    switch (category) {
+        case TaskCategory.CLASS_SCHEDULE:
+            return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', solid: 'bg-blue-600', hover: 'hover:bg-blue-100' };
+        case TaskCategory.EXAM_SCHEDULE:
+            return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', solid: 'bg-red-600', hover: 'hover:bg-red-100' };
+        case TaskCategory.HOMEWORK:
+            return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', solid: 'bg-orange-500', hover: 'hover:bg-orange-100' };
+        case TaskCategory.ACTIVITY_INSIDE:
+            return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', solid: 'bg-emerald-600', hover: 'hover:bg-emerald-100' };
+        case TaskCategory.ACTIVITY_OUTSIDE:
+            return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', solid: 'bg-purple-600', hover: 'hover:bg-purple-100' };
+        default:
+            return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200', solid: 'bg-slate-600', hover: 'hover:bg-slate-100' };
+    }
+};
+
 export interface Task {
   id: string;
   title: string;

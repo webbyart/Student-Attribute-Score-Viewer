@@ -10,7 +10,7 @@ import {
     getProfiles,
     updateProfile
 } from '../../services/api';
-import { Task, TaskCategory, TaskCategoryLabel } from '../../types';
+import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
 import TrashIcon from '../../assets/icons/TrashIcon';
 import PencilIcon from '../../assets/icons/PencilIcon';
@@ -18,12 +18,20 @@ import FileChip from '../../components/ui/FileChip';
 import CalendarView from '../../components/ui/CalendarView';
 import { supabase } from '../../lib/supabaseClient';
 import StudentDetailModal from '../../components/ui/StudentDetailModal';
+import DayEventsModal from '../../components/ui/DayEventsModal';
+import TaskDetailModal from '../../components/ui/TaskDetailModal';
 
 const TeacherDashboardPage: React.FC = () => {
     const { teacher } = useTeacherAuth();
     const [activeTab, setActiveTab] = useState('calendar'); 
     const [tasks, setTasks] = useState<Task[]>([]);
     
+    // Calendar Popups
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+    const [selectedDayTasks, setSelectedDayTasks] = useState<Task[]>([]);
+    const [isDayModalOpen, setIsDayModalOpen] = useState(false);
+    const [selectedTaskForModal, setSelectedTaskForModal] = useState<Task | null>(null);
+
     // User Management State
     const [userType, setUserType] = useState<'student' | 'teacher'>('student');
     const [users, setUsers] = useState<any[]>([]);
@@ -218,6 +226,17 @@ const TeacherDashboardPage: React.FC = () => {
         }
     };
 
+    // Calendar Handlers
+    const handleDateClick = (date: Date, dayTasks: Task[]) => {
+        setSelectedDate(date);
+        setSelectedDayTasks(dayTasks);
+        setIsDayModalOpen(true);
+    };
+
+    const handleTaskClickFromModal = (task: Task) => {
+        setSelectedTaskForModal(task);
+    }
+
     // Advanced Filtering Logic
     const filteredTasks = tasks.filter(t => {
         const matchesSearch = 
@@ -243,23 +262,20 @@ const TeacherDashboardPage: React.FC = () => {
 
     return (
         <div className="animate-fade-in pb-24 relative min-h-screen bg-slate-50">
-            {/* Top Bar removed, replaced by global layout navigation */}
-            
             {/* Main Content Area */}
             <div className="px-4 py-4">
                 {activeTab === 'calendar' && (
                     <div className="animate-fade-in space-y-4">
-                        <CalendarView tasks={tasks} onDateClick={(date, dayTasks) => {
-                            if (dayTasks.length > 0) {
-                                alert(`งานวันที่ ${date.getDate()}: ${dayTasks.length} รายการ\n` + dayTasks.map(t => `- ${t.title}`).join('\n'));
-                            }
-                        }} />
+                        <CalendarView tasks={tasks} onDateClick={handleDateClick} />
                         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                            {['งานทั้งหมด', 'ตารางเรียน', 'การบ้าน', 'สอบ', 'กิจกรรม'].map((label, i) => (
-                                <span key={i} className="px-3 py-1.5 bg-white rounded-full text-xs font-medium text-slate-600 shadow-sm border border-slate-100 whitespace-nowrap">
-                                    {label}
-                                </span>
-                            ))}
+                            {Object.values(TaskCategory).map((cat, i) => {
+                                const colors = getCategoryColor(cat);
+                                return (
+                                    <span key={i} className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border ${colors.bg} ${colors.text} ${colors.border}`}>
+                                        {TaskCategoryLabel[cat]}
+                                    </span>
+                                );
+                            })}
                         </div>
                     </div>
                 )}
@@ -401,13 +417,15 @@ const TeacherDashboardPage: React.FC = () => {
                                 <p>ไม่พบรายการที่ค้นหา</p>
                             </div>
                         ) : (
-                            filteredTasks.map(task => (
+                            filteredTasks.map(task => {
+                                const colors = getCategoryColor(task.category);
+                                return (
                                 <Card key={task.id} className="relative hover:shadow-md transition">
                                     <div className="flex justify-between items-start">
                                         <div className="mb-2 w-full">
                                             <div className="flex justify-between items-start">
                                                 <div className="flex flex-wrap gap-2 mb-2">
-                                                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold text-white bg-slate-700">
+                                                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${colors.bg} ${colors.text} border ${colors.border}`}>
                                                         {TaskCategoryLabel[task.category]}
                                                     </span>
                                                     {task.targetStudentId ? (
@@ -448,7 +466,7 @@ const TeacherDashboardPage: React.FC = () => {
                                         </div>
                                     )}
                                 </Card>
-                            ))
+                            )})
                         )}
                     </div>
                 )}
@@ -551,7 +569,6 @@ const TeacherDashboardPage: React.FC = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
                     </div>
-                    {/* <span className="text-[10px] font-bold text-purple-600">สร้างใหม่</span> */}
                 </button>
                 <button onClick={() => { setActiveTab('history'); handleCancelEdit(); }} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-1/4 ${activeTab === 'history' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
                     <svg className={`w-6 h-6 ${activeTab === 'history' ? 'fill-current' : 'fill-none stroke-current'}`} viewBox="0 0 24 24" strokeWidth={2}>
@@ -566,6 +583,24 @@ const TeacherDashboardPage: React.FC = () => {
                     <span className="text-[10px] font-bold">ผู้ใช้</span>
                 </button>
             </div>
+
+            {/* Day Events Modal */}
+            {isDayModalOpen && selectedDate && (
+                <DayEventsModal 
+                    date={selectedDate}
+                    tasks={selectedDayTasks}
+                    onClose={() => setIsDayModalOpen(false)}
+                    onTaskClick={handleTaskClickFromModal}
+                />
+            )}
+
+            {/* Task Detail Modal */}
+            {selectedTaskForModal && (
+                <TaskDetailModal 
+                    task={selectedTaskForModal}
+                    onClose={() => setSelectedTaskForModal(null)}
+                />
+            )}
 
             {/* Edit User Modal */}
             {editingUser && (

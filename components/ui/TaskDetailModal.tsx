@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Task, TaskCategoryLabel } from '../../types';
+import { Task, TaskCategoryLabel, getCategoryColor } from '../../types';
 import FileChip from './FileChip';
 
 interface TaskDetailModalProps {
@@ -11,11 +11,13 @@ interface TaskDetailModalProps {
 const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose }) => {
   if (!task) return null;
 
+  const colors = getCategoryColor(task.category);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden relative" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="bg-purple-600 p-6 text-white relative">
+        <div className={`${colors.solid} p-6 text-white relative transition-colors duration-300`}>
             <button 
                 onClick={onClose}
                 className="absolute top-4 right-4 p-1 bg-white/20 hover:bg-white/40 rounded-full transition"
@@ -27,8 +29,8 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose }) => {
                     {TaskCategoryLabel[task.category]}
                 </span>
                 {task.targetStudentId && (
-                     <span className="text-xs font-bold bg-orange-400 px-2 py-0.5 rounded text-white border border-white/20">
-                        ส่วนตัว
+                     <span className="text-xs font-bold bg-white text-orange-600 px-2 py-0.5 rounded border border-white/20 shadow-sm">
+                        งานส่วนตัว
                     </span>
                 )}
             </div>
@@ -47,7 +49,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose }) => {
                  </div>
                  <div className="text-right">
                      <p className="text-xs text-slate-500 font-medium">เวลา</p>
-                     <p className="text-lg font-bold text-purple-600">
+                     <p className={`text-lg font-bold ${colors.text}`}>
                         {new Date(task.dueDate).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit'})} น.
                      </p>
                  </div>

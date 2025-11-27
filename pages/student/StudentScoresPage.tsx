@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import FileChip from '../../components/ui/FileChip';
-import { StudentData, Task, TaskCategoryLabel } from '../../types';
+import { StudentData, Task, TaskCategoryLabel, getCategoryColor } from '../../types';
 
 type FilterType = 'all' | 'upcoming' | 'overdue';
 
@@ -73,13 +73,16 @@ const StudentScoresPage: React.FC = () => {
                 <div className="space-y-4 pl-4 border-l-2 border-purple-200 ml-2">
                     {dateTasks.map(task => {
                         const isOverdue = new Date(task.dueDate) < new Date();
+                        const colors = getCategoryColor(task.category);
                         return (
                             <Card key={task.id} className={`relative ${isOverdue ? 'border-l-4 border-l-red-400' : ''}`}>
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <h4 className="font-bold text-lg">{task.title}</h4>
                                         <div className="flex items-center gap-2 mt-1 mb-2">
-                                            <span className="text-xs font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{TaskCategoryLabel[task.category]}</span>
+                                            <span className={`text-xs font-semibold px-2 py-0.5 rounded ${colors.bg} ${colors.text} border ${colors.border}`}>
+                                                {TaskCategoryLabel[task.category]}
+                                            </span>
                                             <span className="text-xs text-slate-500">{task.subject}</span>
                                         </div>
                                     </div>

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Task } from '../../types';
+import { Task, getCategoryColor } from '../../types';
 
 interface CalendarViewProps {
   tasks: Task[];
@@ -38,14 +38,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onDateClick }) => {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
       {/* Header */}
-      <div className="flex justify-between items-center p-4 bg-purple-500 text-white">
-        <button onClick={prevMonth} className="p-1 hover:bg-purple-600 rounded-full">
+      <div className="flex justify-between items-center p-4 bg-slate-800 text-white">
+        <button onClick={prevMonth} className="p-1 hover:bg-white/20 rounded-full transition">
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
         <h2 className="text-lg font-bold">
           {currentDate.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
         </h2>
-        <button onClick={nextMonth} className="p-1 hover:bg-purple-600 rounded-full">
+        <button onClick={nextMonth} className="p-1 hover:bg-white/20 rounded-full transition">
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
         </button>
       </div>
@@ -62,7 +62,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onDateClick }) => {
       {/* Calendar Grid */}
       <div className="grid grid-cols-7 auto-rows-fr">
         {daysArray.map((day, index) => {
-          if (!day) return <div key={index} className="h-20 bg-slate-50/30 border-b border-r border-slate-100"></div>;
+          if (!day) return <div key={index} className="h-24 bg-slate-50/30 border-b border-r border-slate-100"></div>;
           
           const dayTasks = getTasksForDay(day);
           const isToday = day === new Date().getDate() && currentDate.getMonth() === new Date().getMonth() && currentDate.getFullYear() === new Date().getFullYear();
@@ -70,21 +70,24 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onDateClick }) => {
           return (
             <div 
                 key={index} 
-                className={`h-24 p-1 border-b border-r border-slate-100 relative cursor-pointer hover:bg-purple-50 transition ${isToday ? 'bg-purple-50' : ''}`}
+                className={`h-24 p-1 border-b border-r border-slate-100 relative cursor-pointer hover:bg-slate-50 transition ${isToday ? 'bg-purple-50/50' : ''}`}
                 onClick={() => onDateClick && onDateClick(new Date(currentDate.getFullYear(), currentDate.getMonth(), day), dayTasks)}
             >
-              <span className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-purple-600 text-white' : 'text-slate-700'}`}>
+              <span className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-purple-600 text-white shadow-md' : 'text-slate-700'}`}>
                 {day}
               </span>
               
               <div className="flex flex-col gap-1 mt-1 overflow-hidden">
-                {dayTasks.slice(0, 3).map((task, i) => (
-                    <div key={i} className={`text-[9px] px-1 py-0.5 rounded truncate ${task.category.includes('สอบ') ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                        {task.title}
-                    </div>
-                ))}
+                {dayTasks.slice(0, 3).map((task, i) => {
+                    const colors = getCategoryColor(task.category);
+                    return (
+                        <div key={i} className={`text-[9px] px-1 py-0.5 rounded truncate ${colors.bg} ${colors.text} border ${colors.border}`}>
+                            {task.title}
+                        </div>
+                    );
+                })}
                 {dayTasks.length > 3 && (
-                    <div className="text-[9px] text-slate-400 text-center">+{dayTasks.length - 3}</div>
+                    <div className="text-[9px] text-slate-400 text-center font-medium">+{dayTasks.length - 3}</div>
                 )}
               </div>
             </div>
