@@ -12,7 +12,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       <main className="pb-28 pt-8 px-4 sm:px-6 lg:px-8">
         {children}
       </main>
-      <BottomNavBar />
+      <BottomNavBar items={[]} />
     </div>
   );
 };

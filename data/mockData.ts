@@ -3,31 +3,31 @@ import { Student, Task, Teacher, TaskCategory } from '../types';
 
 export let MOCK_STUDENTS: Student[] = [
   {
+    id: 'mock-uuid-001',
     grade: 'ม.4',
     classroom: '2',
     student_id: 'std001',
     student_name: 'สมศรี ใจดี',
     email: 'std001@school.ac.th',
     profileImageUrl: 'https://picsum.photos/seed/amelia/200',
-    password: '123',
   },
   {
+    id: 'mock-uuid-002',
     grade: 'ม.4',
     classroom: '2',
     student_id: 'std002',
     student_name: 'มานะ อดทน',
     email: 'std002@school.ac.th',
     profileImageUrl: 'https://picsum.photos/seed/john/200',
-    password: '123',
   },
    {
+    id: 'mock-uuid-003',
     grade: 'ม.5',
     classroom: '1',
     student_id: 'std003',
     student_name: 'ปิติ ยินดี',
     email: 'std003@school.ac.th',
     profileImageUrl: 'https://picsum.photos/seed/peter/200',
-    password: '123',
   },
 ];
 

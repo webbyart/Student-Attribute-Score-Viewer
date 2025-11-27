@@ -13,11 +13,15 @@ const TeacherLoginPage: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const teacher = await login(email, password);
-    if (!teacher) {
-      setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
-    } else {
-      navigate('/teacher/dashboard');
+    try {
+        const teacher = await login(email, password);
+        if (!teacher) {
+          setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+        } else {
+          navigate('/teacher/dashboard');
+        }
+    } catch (err: any) {
+        setError(err.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
     }
   };
 
@@ -48,7 +52,7 @@ const TeacherLoginPage: React.FC = () => {
               />
             </div>
             
-            {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
+            {error && <p className="text-red-500 text-sm mt-4 bg-red-50 p-2 rounded border border-red-100">{error}</p>}
 
             <button
               type="submit"

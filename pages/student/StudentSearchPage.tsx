@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const StudentSearchPage: React.FC = () => {
   const [studentId, setStudentId] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const { login, loading } = useAuth();
@@ -13,13 +14,18 @@ const StudentSearchPage: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (studentId.trim() && email.trim()) {
-       const success = await login(studentId.trim(), email.trim());
-       if (!success) {
-           setError('รหัสนักเรียนหรืออีเมลไม่ถูกต้อง');
-       } else {
-           navigate(`/student/${studentId.trim()}`);
+    
+    if (studentId.trim() && email.trim() && password.trim()) {
+       try {
+         const success = await login(studentId.trim(), email.trim(), password.trim());
+         if (success) {
+             navigate(`/student/${studentId.trim()}`);
+         }
+       } catch (err: any) {
+         setError(err.message || 'ข้อมูลไม่ถูกต้อง หรือรหัสผ่านผิด');
        }
+    } else {
+        setError('กรุณากรอกข้อมูลให้ครบถ้วน');
     }
   };
 
@@ -35,7 +41,7 @@ const StudentSearchPage: React.FC = () => {
               type="text" 
               value={studentId}
               onChange={(e) => setStudentId(e.target.value)}
-              placeholder="รหัสนักเรียน" 
+              placeholder="รหัสนักเรียน (เช่น std001)" 
               className="w-full px-4 py-3 bg-white/70 border border-sky-200 rounded-xl focus:ring-2 focus:ring-sky-400 focus:outline-none transition"
               required
             />
@@ -43,11 +49,30 @@ const StudentSearchPage: React.FC = () => {
               type="email" 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="อีเมลโรงเรียน (@school.ac.th)" 
+              placeholder="อีเมลโรงเรียน" 
               className="w-full px-4 py-3 bg-white/70 border border-sky-200 rounded-xl focus:ring-2 focus:ring-sky-400 focus:outline-none transition"
               required
             />
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="รหัสผ่าน" 
+              className="w-full px-4 py-3 bg-white/70 border border-sky-200 rounded-xl focus:ring-2 focus:ring-sky-400 focus:outline-none transition"
+              required
+            />
+            
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-xl text-sm text-left">
+                    <p className="font-bold mb-1">เกิดข้อผิดพลาด</p>
+                    <p>{error}</p>
+                    {error.includes("ยังไม่ได้ลงทะเบียน") && (
+                         <Link to="/student/register" className="block mt-2 text-sky-600 underline font-bold">
+                             คลิกที่นี่เพื่อลงทะเบียน
+                         </Link>
+                    )}
+                </div>
+            )}
             
             <button
               type="submit"

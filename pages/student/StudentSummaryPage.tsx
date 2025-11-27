@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import FileChip from '../../components/ui/FileChip';
-import { StudentData, TaskCategory } from '../../types';
+import { StudentData, TaskCategory, TaskCategoryLabel } from '../../types';
 
 const StudentSummaryPage: React.FC = () => {
   const { tasks } = useOutletContext<StudentData>();
@@ -36,7 +36,7 @@ const StudentSummaryPage: React.FC = () => {
                 onClick={() => setSelectedCategory(cat)}
                 className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-medium transition ${selectedCategory === cat ? 'bg-purple-600 text-white shadow-lg' : 'bg-white text-slate-600 border border-slate-100'}`}
               >
-                  {cat}
+                  {TaskCategoryLabel[cat]}
               </button>
           ))}
       </div>
@@ -45,7 +45,7 @@ const StudentSummaryPage: React.FC = () => {
           {filteredTasks.length > 0 ? filteredTasks.map(task => (
               <Card key={task.id}>
                   <div className="flex justify-between items-start mb-2">
-                      <span className="text-[10px] font-bold text-white bg-purple-500 px-2 py-0.5 rounded-full shadow-sm">{task.category}</span>
+                      <span className="text-[10px] font-bold text-white bg-purple-500 px-2 py-0.5 rounded-full shadow-sm">{TaskCategoryLabel[task.category]}</span>
                       <span className="text-xs text-slate-400">{new Date(task.dueDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'})}</span>
                   </div>
                   <h3 className="font-bold text-lg text-slate-800">{task.title}</h3>

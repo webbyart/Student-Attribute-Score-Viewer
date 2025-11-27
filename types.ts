@@ -1,21 +1,30 @@
 
 export interface Student {
+  id: string; // UUID from Supabase
   grade: string;
   classroom: string;
   student_id: string;
   student_name: string;
   email: string;
   profileImageUrl: string;
-  password?: string; // For mock auth
 }
 
 export enum TaskCategory {
-  CLASS_SCHEDULE = 'ตารางเรียน',
-  EXAM_SCHEDULE = 'ตารางสอบ',
-  HOMEWORK = 'การบ้าน',
-  ACTIVITY_INSIDE = 'กิจกรรมเสริมหลักสูตร',
-  ACTIVITY_OUTSIDE = 'กิจกรรมภายนอก',
+  CLASS_SCHEDULE = 'CLASS_SCHEDULE',
+  EXAM_SCHEDULE = 'EXAM_SCHEDULE',
+  HOMEWORK = 'HOMEWORK',
+  ACTIVITY_INSIDE = 'ACTIVITY_INSIDE',
+  ACTIVITY_OUTSIDE = 'ACTIVITY_OUTSIDE',
 }
+
+// Helper for display text
+export const TaskCategoryLabel: Record<TaskCategory, string> = {
+    [TaskCategory.CLASS_SCHEDULE]: 'ตารางเรียน',
+    [TaskCategory.EXAM_SCHEDULE]: 'ตารางสอบ',
+    [TaskCategory.HOMEWORK]: 'การบ้าน',
+    [TaskCategory.ACTIVITY_INSIDE]: 'กิจกรรมเสริมหลักสูตร',
+    [TaskCategory.ACTIVITY_OUTSIDE]: 'กิจกรรมภายนอก',
+};
 
 export interface Task {
   id: string;
@@ -24,12 +33,26 @@ export interface Task {
   description: string;
   dueDate: string; // ISO
   category: TaskCategory;
-  attachments: string[]; // filenames
+  attachments: string[]; // filenames or URLs
   targetGrade: string;
   targetClassroom: string;
   targetStudentId?: string; // Added for individual assignment
   createdBy: string;
   createdAt: string;
+}
+
+export interface Notification {
+    id: string;
+    task_id: string;
+    message: string;
+    is_read: boolean;
+    created_at: string;
+}
+
+export interface Teacher {
+  teacher_id: string; // UUID
+  name: string;
+  email: string;
 }
 
 export interface Attribute {
@@ -41,21 +64,16 @@ export interface Score {
   score_id: string;
   attribute_id: string;
   score: number;
-  date: string; // ISO string
+  date: string;
   teacherName?: string;
   comment?: string;
-}
-
-export interface Teacher {
-  teacher_id: string;
-  name: string;
-  email: string;
 }
 
 // Combined data structure for student view
 export interface StudentData {
   student: Student;
   tasks: Task[];
+  notifications: Notification[];
   attributes: Attribute[];
   scores: Score[];
 }
@@ -66,7 +84,8 @@ export enum Role {
 }
 
 export interface User {
-  student_id: string;
+  id: string;
+  student_id?: string;
   name: string;
   email: string;
   profileImageUrl: string;

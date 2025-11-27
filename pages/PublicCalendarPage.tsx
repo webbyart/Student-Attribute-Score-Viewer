@@ -1,32 +1,85 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CalendarView from '../components/ui/CalendarView';
-import { MOCK_TASKS } from '../data/mockData';
 import Card from '../components/ui/Card';
-import { Task } from '../types';
+import { Task, TaskCategoryLabel } from '../types';
+import { testDatabaseConnection, getAllTasks } from '../services/api';
+import { supabase } from '../lib/supabaseClient';
+import LoadingSpinner from '../components/ui/LoadingSpinner';
+import TaskDetailModal from '../components/ui/TaskDetailModal';
+import DayEventsModal from '../components/ui/DayEventsModal';
 
 const PublicCalendarPage: React.FC = () => {
   const navigate = useNavigate();
-  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedTasks, setSelectedTasks] = useState<Task[]>([]);
+  const [isTesting, setIsTesting] = useState(false);
+  const [selectedTaskForModal, setSelectedTaskForModal] = useState<Task | null>(null);
+  const [isDayModalOpen, setIsDayModalOpen] = useState(false);
 
-  // Initialize with today's tasks
-  React.useEffect(() => {
-    const today = new Date();
-    const todaysTasks = MOCK_TASKS.filter(task => {
-        const tDate = new Date(task.dueDate);
-        return tDate.getDate() === today.getDate() && 
-               tDate.getMonth() === today.getMonth() &&
-               tDate.getFullYear() === today.getFullYear();
-    });
-    setSelectedTasks(todaysTasks);
+  useEffect(() => {
+    fetchTasks();
+
+    // Real-time Subscription to keep calendar up-to-date
+    const channel = supabase.channel('public-tasks')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+            fetchTasks();
+        })
+        .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const handleDateClick = (date: Date, tasks: Task[]) => {
-      setSelectedDate(date);
-      setSelectedTasks(tasks);
+  // Update selected tasks when date or tasks change
+  useEffect(() => {
+    if (tasks.length > 0) {
+        filterTasksByDate(selectedDate, tasks);
+    }
+  }, [tasks, selectedDate]);
+
+  const fetchTasks = async () => {
+      // Use getAllTasks which pulls from Supabase 'tasks' table directly
+      const data = await getAllTasks();
+      setTasks(data);
+      setLoading(false);
   };
+
+  const filterTasksByDate = (date: Date, allTasks: Task[]) => {
+      const filtered = allTasks.filter(task => {
+          const tDate = new Date(task.dueDate);
+          return tDate.getDate() === date.getDate() && 
+                 tDate.getMonth() === date.getMonth() &&
+                 tDate.getFullYear() === date.getFullYear();
+      });
+      setSelectedTasks(filtered);
+  };
+
+  const handleDateClick = (date: Date, _dayTasks: Task[]) => {
+      setSelectedDate(date);
+      // We re-filter from the main state to ensure we have the latest data
+      filterTasksByDate(date, tasks);
+      setIsDayModalOpen(true);
+  };
+
+  const handleTaskClick = (task: Task) => {
+      setSelectedTaskForModal(task);
+      // Optional: close day modal if we want deeper drill down without back navigation, 
+      // but keeping it open allows "Back" behavior by just closing detail modal.
+  }
+
+  const handleTestConnection = async () => {
+      setIsTesting(true);
+      const result = await testDatabaseConnection();
+      alert(result.message);
+      setIsTesting(false);
+  };
+
+  if (loading) {
+      return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><LoadingSpinner /></div>;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -46,37 +99,41 @@ const PublicCalendarPage: React.FC = () => {
 
       <div className="p-4 space-y-6 max-w-md mx-auto">
         {/* Calendar */}
-        <CalendarView tasks={MOCK_TASKS} onDateClick={handleDateClick} />
+        <CalendarView tasks={tasks} onDateClick={handleDateClick} />
 
-        {/* Selected Date Details */}
-        <div className="space-y-3">
-            <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
-                <span className="w-2 h-6 bg-purple-500 rounded-full"></span>
-                {selectedDate ? selectedDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric'}) : 'วันนี้'}
-            </h2>
-            
-            {selectedTasks.length > 0 ? (
-                selectedTasks.map(task => (
-                    <Card key={task.id} className="border-l-4 border-l-purple-500">
-                         <div className="flex justify-between items-start">
-                             <div>
-                                <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded mb-1 inline-block">{task.category}</span>
-                                <h3 className="font-bold text-slate-800">{task.title}</h3>
-                                <p className="text-xs text-slate-500">{task.subject}</p>
-                             </div>
-                             <span className="text-xs font-bold text-slate-400">
-                                 {new Date(task.dueDate).toLocaleTimeString('th-TH', { hour: '2-digit', minute:'2-digit'})}
-                             </span>
-                         </div>
-                    </Card>
-                ))
-            ) : (
-                <div className="text-center py-8 text-slate-400 bg-white rounded-xl border border-slate-100">
-                    ไม่มีกิจกรรมในวันนี้
-                </div>
-            )}
+        <div className="text-center text-xs text-slate-400">
+            แตะที่วันที่เพื่อดูรายการกิจกรรม
+        </div>
+
+        {/* Connection Test Button */}
+        <div className="flex justify-center mt-8 pt-4 border-t border-slate-200">
+             <button 
+                onClick={handleTestConnection}
+                disabled={isTesting}
+                className="text-xs text-slate-400 bg-slate-100 px-3 py-2 rounded hover:bg-slate-200 transition"
+             >
+                {isTesting ? 'กำลังทดสอบ...' : '🛠️ ทดสอบการเชื่อมต่อฐานข้อมูล'}
+             </button>
         </div>
       </div>
+
+      {/* Day Events Modal (List of tasks for the day) */}
+      {isDayModalOpen && (
+          <DayEventsModal 
+            date={selectedDate}
+            tasks={selectedTasks}
+            onClose={() => setIsDayModalOpen(false)}
+            onTaskClick={handleTaskClick}
+          />
+      )}
+
+      {/* Task Detail Modal */}
+      {selectedTaskForModal && (
+          <TaskDetailModal 
+            task={selectedTaskForModal} 
+            onClose={() => setSelectedTaskForModal(null)} 
+          />
+      )}
     </div>
   );
 };
