@@ -1,0 +1,5 @@
+{
+  "name": "Student Attribute Score Viewer",
+  "description": "A web application for viewing student attribute scores, using Google Sheets as the database. This app provides separate interfaces for students (view-only via ID search) and teachers (login required to manage scores). It features a modern, pastel-themed UI with data visualizations.",
+  "requestFramePermissions": []
+}
