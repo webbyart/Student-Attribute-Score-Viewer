@@ -11,7 +11,9 @@ import {
     updateProfile,
     getSystemSettings,
     saveSystemSettings,
-    testLineNotification
+    testLineNotification,
+    generateTaskFlexMessage,
+    checkDatabaseHealth
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
@@ -45,9 +47,15 @@ const TeacherDashboardPage: React.FC = () => {
     
     // Settings State - Pre-filled with provided credentials
     const [lineToken, setLineToken] = useState('vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=');
+    const [lineSecret, setLineSecret] = useState('b7cd5cc937837ad847aba3bf851576d9');
     const [testUserId, setTestUserId] = useState('Ua276c047d87982958a524c1f5ac30f08');
     const [settingsMessage, setSettingsMessage] = useState('');
     const [isSendingTest, setIsSendingTest] = useState(false);
+    
+    // DB Health Check State
+    const [dbHealth, setDbHealth] = useState<{name: string, status: string}[]>([]);
+    const [missingSql, setMissingSql] = useState('');
+    const [isCheckingDb, setIsCheckingDb] = useState(false);
 
     // Task Filter State
     const [taskSearch, setTaskSearch] = useState('');
@@ -124,17 +132,46 @@ const TeacherDashboardPage: React.FC = () => {
         if (settings['line_channel_access_token']) {
             setLineToken(settings['line_channel_access_token']);
         }
+        if (settings['line_channel_secret']) {
+            setLineSecret(settings['line_channel_secret']);
+        }
+    }
+
+    const handleCheckDb = async () => {
+        setIsCheckingDb(true);
+        const result = await checkDatabaseHealth();
+        setDbHealth(result.tables);
+        setMissingSql(result.missingSql);
+        setIsCheckingDb(false);
     }
 
     const handleSaveSettings = async () => {
-        const result = await saveSystemSettings({ 'line_channel_access_token': lineToken });
+        const result = await saveSystemSettings({ 
+            'line_channel_access_token': lineToken,
+            'line_channel_secret': lineSecret
+        });
         setSettingsMessage(result.message);
         setTimeout(() => setSettingsMessage(''), 3000);
     }
 
     const handleTestLine = async () => {
         setIsSendingTest(true);
-        const result = await testLineNotification(lineToken, testUserId);
+        // Create a dummy task to test the Flex Message generator
+        const dummyTask: any = {
+            title: 'ทดสอบส่งการบ้าน (Flex)',
+            subject: 'วิชาวิทยาการคำนวณ',
+            description: 'นี่คือตัวอย่างการแสดงผลแบบ Flex Message บน LINE',
+            dueDate: new Date(Date.now() + 86400000).toISOString(),
+            category: TaskCategory.HOMEWORK,
+            priority: 'High',
+            targetGrade: 'ม.4',
+            targetClassroom: '2'
+        };
+        
+        // Pass the object to generate Flex
+        const flexMessage = generateTaskFlexMessage(dummyTask);
+        const result = await testLineNotification(lineToken, testUserId, flexMessage);
+        
         setSettingsMessage(result.message);
         setIsSendingTest(false);
         setTimeout(() => setSettingsMessage(''), 5000);
@@ -615,7 +652,7 @@ const TeacherDashboardPage: React.FC = () => {
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-2">Channel Access Token</label>
                                     <textarea 
-                                        rows={4}
+                                        rows={3}
                                         value={lineToken}
                                         onChange={(e) => setLineToken(e.target.value)}
                                         className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-green-200 focus:border-green-400 focus:outline-none transition break-all"
@@ -624,6 +661,17 @@ const TeacherDashboardPage: React.FC = () => {
                                     <p className="text-xs text-slate-400 mt-2">
                                         * คัดลอก Long-lived access token จาก LINE Developers Console
                                     </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Channel Secret</label>
+                                    <input 
+                                        type="password"
+                                        value={lineSecret}
+                                        onChange={(e) => setLineSecret(e.target.value)}
+                                        className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-green-200 focus:border-green-400 focus:outline-none transition"
+                                        placeholder="วาง Channel Secret ของคุณที่นี่..."
+                                    />
                                 </div>
 
                                 <button 
@@ -654,17 +702,78 @@ const TeacherDashboardPage: React.FC = () => {
                                             {isSendingTest ? 'กำลังส่ง...' : (
                                                 <>
                                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
-                                                    ส่งข้อความทดสอบ
+                                                    ส่ง Flex Message ทดสอบ
                                                 </>
                                             )}
                                         </button>
+                                        <p className="text-xs text-slate-400 text-center">
+                                            (คลิกเพื่อดูตัวอย่าง Card ใน Console และ UI)
+                                        </p>
                                     </div>
                                 </div>
 
                                 {settingsMessage && (
-                                    <p className={`text-center text-sm font-medium animate-fade-in p-3 rounded-lg ${settingsMessage.includes('ล้มเหลว') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>{settingsMessage}</p>
+                                    <p className={`text-center text-sm font-medium animate-fade-in p-3 rounded-lg ${settingsMessage.includes('ล้มเหลว') || settingsMessage.includes('Error') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>{settingsMessage}</p>
                                 )}
                             </div>
+                        </Card>
+
+                        <Card>
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-3 bg-indigo-100 text-indigo-600 rounded-full">
+                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-800">ตรวจสอบฐานข้อมูล</h2>
+                                    <p className="text-sm text-slate-500">ตรวจสอบสถานะตารางต่างๆ</p>
+                                </div>
+                            </div>
+                            
+                            <button 
+                                onClick={handleCheckDb}
+                                disabled={isCheckingDb}
+                                className="w-full bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-indigo-600 transition flex items-center justify-center gap-2"
+                            >
+                                {isCheckingDb ? 'กำลังตรวจสอบ...' : 'เริ่มการตรวจสอบระบบ'}
+                            </button>
+
+                            {dbHealth.length > 0 && (
+                                <div className="mt-4 space-y-2">
+                                    {dbHealth.map((table, i) => (
+                                        <div key={i} className={`flex justify-between items-center p-3 rounded-lg ${table.status === 'ok' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                                            <div>
+                                                 <span className="font-mono text-sm font-bold text-slate-700 block">{table.name}</span>
+                                                 {table.message && <span className="text-[10px] text-slate-500">{table.message}</span>}
+                                            </div>
+                                            {table.status === 'ok' ? (
+                                                <span className="text-xs font-bold text-green-600 bg-green-200 px-2 py-0.5 rounded-full">OK</span>
+                                            ) : (
+                                                <span className="text-xs font-bold text-red-600 bg-red-200 px-2 py-0.5 rounded-full">Missing</span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {missingSql && (
+                                <div className="mt-6 pt-6 border-t border-slate-100">
+                                    <h3 className="text-sm font-bold text-red-600 mb-2">⚠️ พบปัญหาโครงสร้างฐานข้อมูล</h3>
+                                    <p className="text-xs text-slate-500 mb-2">ระบบได้สร้างคำสั่ง SQL สำหรับซ่อมแซมตารางที่ขาดหายไป กรุณาคัดลอกและนำไปรันใน Supabase SQL Editor</p>
+                                    <div className="relative">
+                                        <textarea 
+                                            readOnly 
+                                            value={missingSql} 
+                                            className="w-full h-40 bg-slate-900 text-green-400 font-mono text-[10px] p-3 rounded-lg overflow-x-auto whitespace-pre"
+                                        />
+                                        <button 
+                                            onClick={() => { navigator.clipboard.writeText(missingSql); alert('คัดลอก SQL แล้ว!'); }}
+                                            className="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-white text-xs px-2 py-1 rounded"
+                                        >
+                                            Copy SQL
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </Card>
                      </div>
                 )}

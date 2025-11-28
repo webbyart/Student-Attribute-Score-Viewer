@@ -15,7 +15,6 @@ const PublicCalendarPage: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTasks, setSelectedTasks] = useState<Task[]>([]);
-  const [isTesting, setIsTesting] = useState(false);
   const [selectedTaskForModal, setSelectedTaskForModal] = useState<Task | null>(null);
   const [isDayModalOpen, setIsDayModalOpen] = useState(false);
 
@@ -70,12 +69,12 @@ const PublicCalendarPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
       {/* Header - Compact & Sticky */}
-      <div className="bg-white px-4 py-3 shadow-sm flex justify-between items-center sticky top-0 z-20 shrink-0">
+      <div className="bg-white px-4 py-3 shadow-sm flex justify-between items-center z-20 shrink-0 border-b border-slate-200">
         <div>
             <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                📅 ปฏิทินกิจกรรม
+                📅 ปฏิทินกิจกรรมโรงเรียน
             </h1>
         </div>
         <button 
@@ -87,13 +86,9 @@ const PublicCalendarPage: React.FC = () => {
       </div>
 
       {/* Main Content - Full Height / Responsive */}
-      <div className="flex-1 p-2 md:p-4 flex flex-col h-full w-full max-w-7xl mx-auto">
-        <div className="flex-1 flex flex-col">
+      <div className="flex-1 p-0 md:p-4 flex flex-col h-full w-full overflow-hidden">
+        <div className="flex-1 flex flex-col h-full bg-white md:rounded-xl md:shadow-sm md:border md:border-slate-200 overflow-hidden">
             <CalendarView tasks={tasks} onDateClick={handleDateClick} />
-        </div>
-        
-        <div className="text-center text-xs text-slate-400 mt-2 pb-safe">
-            แตะที่วันที่เพื่อดูรายการกิจกรรม
         </div>
       </div>
 
