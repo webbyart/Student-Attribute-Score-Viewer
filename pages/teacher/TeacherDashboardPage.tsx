@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Card from '../../components/ui/Card';
 import { 
@@ -19,6 +20,7 @@ import { supabase } from '../../lib/supabaseClient';
 import StudentDetailModal from '../../components/ui/StudentDetailModal';
 import DayEventsModal from '../../components/ui/DayEventsModal';
 import TaskDetailModal from '../../components/ui/TaskDetailModal';
+import TimetableGrid from '../../components/ui/TimetableGrid';
 
 const TeacherDashboardPage: React.FC = () => {
     const { teacher } = useTeacherAuth();
@@ -277,63 +279,60 @@ const TeacherDashboardPage: React.FC = () => {
 
                 {activeTab === 'schedule' && (
                     <div className="animate-fade-in space-y-4">
-                        <div className="flex justify-between items-center mb-2">
-                            <div>
-                                <h2 className="text-xl font-bold text-slate-800">จัดการตารางเรียน</h2>
-                                <p className="text-xs text-slate-500">คาบเรียนและตารางสอน</p>
-                            </div>
-                            <button 
-                                onClick={() => { setActiveTab('post'); setFormData(prev => ({ ...prev, category: TaskCategory.CLASS_SCHEDULE })); }} 
-                                className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-full hover:bg-blue-700 shadow-md flex items-center gap-1"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                                เพิ่มคาบเรียน
-                            </button>
-                        </div>
-                        
-                        {/* Grade Filter for Schedule */}
-                        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                             <button onClick={() => setFilterGrade('All')} className={`px-3 py-1.5 text-xs font-bold rounded-full border transition ${filterGrade === 'All' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200'}`}>ทั้งหมด</button>
-                             <button onClick={() => setFilterGrade('ม.4')} className={`px-3 py-1.5 text-xs font-bold rounded-full border transition ${filterGrade === 'ม.4' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200'}`}>ม.4</button>
-                             <button onClick={() => setFilterGrade('ม.5')} className={`px-3 py-1.5 text-xs font-bold rounded-full border transition ${filterGrade === 'ม.5' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200'}`}>ม.5</button>
-                             <button onClick={() => setFilterGrade('ม.6')} className={`px-3 py-1.5 text-xs font-bold rounded-full border transition ${filterGrade === 'ม.6' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200'}`}>ม.6</button>
-                        </div>
+                         {/* Dedicated Timetable Grid */}
+                         <TimetableGrid />
 
-                        {classScheduleTasks.filter(t => filterGrade === 'All' || t.targetGrade === filterGrade).length > 0 ? (
-                            <div className="grid grid-cols-1 gap-3">
-                                {classScheduleTasks.filter(t => filterGrade === 'All' || t.targetGrade === filterGrade).map(task => (
-                                    <div key={task.id} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-l-blue-500 flex justify-between items-center group hover:shadow-md transition">
-                                        <div className="flex items-center gap-3">
-                                            <div className="bg-blue-50 text-blue-700 p-2 rounded-lg font-bold text-center min-w-[3rem]">
-                                                <div className="text-xs">ห้อง</div>
-                                                <div className="text-lg leading-none">{task.targetGrade}/{task.targetClassroom}</div>
-                                            </div>
-                                            <div>
-                                                <h3 className="font-bold text-slate-800">{task.title}</h3>
-                                                <div className="text-sm text-slate-600">{task.subject}</div>
-                                                <div className="flex items-center gap-2 mt-1">
-                                                     <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                                        🗓️ {new Date(task.dueDate).toLocaleDateString('th-TH', {weekday: 'short', day: 'numeric', month: 'short'})}
-                                                     </span>
-                                                     <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                                        ⏰ {new Date(task.dueDate).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})}
-                                                     </span>
+                        <div className="mt-8 pt-4 border-t border-slate-200">
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-700">รายการเปลี่ยนแปลง/ชดเชย</h2>
+                                    <p className="text-xs text-slate-500">คาบเรียนพิเศษที่เพิ่มเป็นรายวัน</p>
+                                </div>
+                                <button 
+                                    onClick={() => { setActiveTab('post'); setFormData(prev => ({ ...prev, category: TaskCategory.CLASS_SCHEDULE })); }} 
+                                    className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-full hover:bg-blue-700 shadow-md flex items-center gap-1"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                    เพิ่มคาบพิเศษ
+                                </button>
+                            </div>
+                            
+                            {/* Existing One-off Class Schedule List */}
+                             {classScheduleTasks.length > 0 ? (
+                                <div className="grid grid-cols-1 gap-3">
+                                    {classScheduleTasks.map(task => (
+                                        <div key={task.id} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-l-blue-500 flex justify-between items-center group hover:shadow-md transition">
+                                            <div className="flex items-center gap-3">
+                                                <div className="bg-blue-50 text-blue-700 p-2 rounded-lg font-bold text-center min-w-[3rem]">
+                                                    <div className="text-xs">ห้อง</div>
+                                                    <div className="text-lg leading-none">{task.targetGrade}/{task.targetClassroom}</div>
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-bold text-slate-800">{task.title}</h3>
+                                                    <div className="text-sm text-slate-600">{task.subject}</div>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                         <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                                            🗓️ {new Date(task.dueDate).toLocaleDateString('th-TH', {weekday: 'short', day: 'numeric', month: 'short'})}
+                                                         </span>
+                                                         <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                                            ⏰ {new Date(task.dueDate).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})}
+                                                         </span>
+                                                    </div>
                                                 </div>
                                             </div>
+                                            <div className="flex gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                                                <button onClick={() => handleEditTask(task)} className="p-2 text-blue-500 bg-blue-50 rounded-lg hover:bg-blue-100"><PencilIcon className="w-5 h-5"/></button>
+                                                <button onClick={() => handleDeleteTask(task.id)} className="p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100"><TrashIcon className="w-5 h-5"/></button>
+                                            </div>
                                         </div>
-                                        <div className="flex gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
-                                            <button onClick={() => handleEditTask(task)} className="p-2 text-blue-500 bg-blue-50 rounded-lg hover:bg-blue-100"><PencilIcon className="w-5 h-5"/></button>
-                                            <button onClick={() => handleDeleteTask(task.id)} className="p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100"><TrashIcon className="w-5 h-5"/></button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-200">
-                                <span className="text-4xl block mb-2">📅</span>
-                                <p className="text-slate-400">ยังไม่มีตารางเรียนในระดับชั้นนี้</p>
-                            </div>
-                        )}
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs">
+                                    <p className="text-slate-400">ไม่มีรายการคาบเรียนพิเศษ/ชดเชย</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 

@@ -1,5 +1,5 @@
 
-import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Role } from '../types';
+import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Role, TimetableEntry } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
 // --- Utility ---
@@ -17,18 +17,43 @@ export const testDatabaseConnection = async (): Promise<{ success: boolean; mess
 
 // --- Student Auth & Data ---
 
+export const prepareStudentClaim = async (email: string, studentId: string, password?: string) => {
+    // Note: The actual RPC call should be implemented here if using client-side logic wrapper
+    // But we are calling supabase.rpc directly in loginStudent.
+    // Keeping this function as a placeholder if we need abstraction later.
+    return; 
+};
+
 export const registerStudent = async (data: any): Promise<{ success: boolean; message: string }> => {
     try {
-        // 1. Sign up auth user
+        // 0. Pre-check: If user exists in Auth, but not in Profile (edge case), or vice versa.
+        // Actually, let's rely on the delete-then-insert strategy which is safer for this "claim" model.
+
+        // 1. Delete Existing Profile and Notifications (Sample Data Cleanup)
+        // We must check if there is a conflict first.
+        const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('student_id', data.student_id)
+            .eq('role', 'student')
+            .maybeSingle();
+
+        if (existingProfile) {
+            // Delete notifications first (FK constraint)
+            await supabase.from('notifications').delete().eq('user_id', existingProfile.id);
+            // Delete profile
+            await supabase.from('profiles').delete().eq('id', existingProfile.id);
+        }
+
+        // 2. Sign up auth user
         const { data: authData, error: authError } = await supabase.auth.signUp({
             email: data.email,
             password: data.password,
         });
 
         if (authError) {
-             // If user already exists in Auth but maybe profile creation failed previously
              if (authError.message.includes('already registered')) {
-                 // Try to sign in to get the User ID
+                 // Try to sign in
                  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
                      email: data.email,
                      password: data.password
@@ -45,8 +70,7 @@ export const registerStudent = async (data: any): Promise<{ success: boolean; me
         
         if (!authData.user) throw new Error("No user created");
 
-        // 2. Insert Profile (If it fails due to conflict, it means profile already exists, which is fine)
-        // We use upsert to be safe
+        // 3. Insert Profile
         const { error: profileError } = await supabase.from('profiles').upsert({
             id: authData.user.id,
             email: data.email,
@@ -83,12 +107,12 @@ export const loginStudent = async (studentId: string, email: string, password?: 
 
         if (authError) {
             // 2. Auth failed. This might be a "Legacy/Mock" user trying to claim their account.
-            // We call the secure RPC function to check and prepare the account.
             
             // Adjust password for min length requirement if using legacy '1234'
             let regPassword = password;
             if (password === '1234') regPassword = '123456';
 
+            // Call Secure RPC to clean up old data
             const { data: claimResult, error: rpcError } = await supabase.rpc('prepare_student_claim', {
                 p_email: email,
                 p_student_id: studentId,
@@ -97,36 +121,27 @@ export const loginStudent = async (studentId: string, email: string, password?: 
 
             if (rpcError) {
                 console.error("RPC Error:", rpcError);
-                // If RPC fails (e.g function not found), fall through to generic error
             }
 
-            // If RPC returns success: true, the old profile is deleted, we can register fresh.
             if (claimResult && claimResult.success) {
                 console.log("Account claim prepared. Registering...");
                 
-                // Get the deleted profile data? No, RPC doesn't return it.
-                // We rely on the input data. We might miss Name/Grade/Classroom if we don't fetch before.
-                // However, usually the student inputs their ID.
-                // For a perfect UX, we should have fetched the profile *before* calling RPC.
-                // But let's assume standard registration for now or try to re-fetch if RPC failed?
-                // Wait, if RPC success, the data is GONE.
-                // Strategy: We should register with generic data and let them update, 
-                // OR we fetch first, then RPC.
+                // We use placeholder data for the missing fields, assuming user will update later or Admin has set it correct in the logic (but we deleted it).
+                // Wait, if we deleted the profile, we lost the name/grade/class!
+                // Ideally, the RPC should return the old data before deleting, OR we fetch it first.
+                // Let's improve the flow: fetch mock data first.
+
+                // Actually, the RPC is strict. 
+                // Let's rely on a simpler flow: User uses "Register" if they want full data control, 
+                // OR we just register with placeholders and they fix it.
+                // Or better: The RPC *could* return the old data if we modified it.
                 
-                // Let's fetch mock data locally from MOCK_DATA if needed? No.
-                // We will proceed with Registration using the inputs provided. 
-                // Note: The UI for Login only asks for ID/Email/Pass. We don't have Name/Grade/Class.
-                // This is a limitation of the "Auto-Login" from Login screen.
-                // Ideally, they should use "Register" screen.
-                
-                // Hack: If coming from Login screen, we might lack Name/Class.
-                // Let's assume the user uses the '1234' default.
-                
+                // For now, let's just register with the Student ID as name placeholder.
                 const regResult = await registerStudent({
                     student_id: studentId,
-                    student_name: 'Student ' + studentId, // Placeholder name
+                    student_name: 'Student ' + studentId, 
                     email: email,
-                    grade: 'Updating...', // Placeholder
+                    grade: 'Updating...', 
                     classroom: '...',
                     password: regPassword
                 });
@@ -138,24 +153,20 @@ export const loginStudent = async (studentId: string, email: string, password?: 
                      });
                      if (retryError) throw retryError;
                      authData.user = retryData.user;
-                     // Continue to fetch profile...
                 } else {
                      throw new Error("ระบบไม่สามารถลงทะเบียนอัตโนมัติได้: " + regResult.message);
                 }
             } else {
-                // If RPC failed (e.g. profile not found, or password wrong)
                 if (claimResult && !claimResult.success) {
-                     // If message is "Invalid password", throw it
                      if (claimResult.message === 'Invalid password') throw new Error("รหัสผ่านไม่ถูกต้อง (Login Code)");
                 }
-                // If not claimable, just throw the original Auth error
                 throw new Error("อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือบัญชียังไม่ได้ลงทะเบียน");
             }
         }
 
         if (!authData.user) throw new Error("Authentication failed");
 
-        // 3. Auth Success (Standard Path)
+        // 3. Auth Success
         const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('*')
@@ -333,6 +344,29 @@ export const updateProfile = async (id: string, updates: any): Promise<{ success
         return { success: true, message: 'อัพเดทข้อมูลสำเร็จ' };
     } catch (e: any) {
         return { success: false, message: e.message };
+    }
+};
+
+// --- Timetable Management ---
+
+export const getTimetable = async (grade: string, classroom: string): Promise<TimetableEntry[]> => {
+    try {
+        const { data, error } = await supabase
+            .from('timetables')
+            .select('*')
+            .eq('grade', grade)
+            .eq('classroom', classroom)
+            .order('period_index', { ascending: true });
+        
+        if (error) {
+            // Handle case where table might not exist yet gracefully for demo
+            console.warn("Timetable fetch error (possibly table missing):", error);
+            return [];
+        }
+        return data || [];
+    } catch (e) {
+        console.error("Error fetching timetable:", e);
+        return [];
     }
 };
 

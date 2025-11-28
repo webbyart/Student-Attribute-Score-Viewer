@@ -60,6 +60,19 @@ export interface Task {
   createdAt: string;
 }
 
+export interface TimetableEntry {
+    id: string;
+    grade: string;
+    classroom: string;
+    day_of_week: string;
+    period_index: number;
+    period_time: string;
+    subject: string;
+    teacher: string;
+    room: string;
+    color: string;
+}
+
 export interface Notification {
     id: string;
     task_id: string;
