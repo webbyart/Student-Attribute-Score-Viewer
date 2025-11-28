@@ -51,6 +51,7 @@ export interface Task {
   description: string;
   dueDate: string; // ISO
   category: TaskCategory;
+  priority?: 'High' | 'Medium' | 'Low'; // Added priority
   attachments: string[]; // filenames or URLs
   targetGrade: string;
   targetClassroom: string;

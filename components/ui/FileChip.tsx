@@ -72,7 +72,7 @@ const FileChip: React.FC<FileChipProps> = ({ filename, onRemove, className = '' 
   const displayName = isUrl ? filename.split('/').pop()?.split('?')[0] : filename;
   
   return (
-    <div className={`flex items-center gap-3 bg-white border border-slate-200 pl-2 pr-3 py-2 rounded-xl text-sm font-medium text-slate-700 shadow-sm transition hover:shadow-md group ${className}`}>
+    <div className={`flex items-center gap-2 bg-white border border-slate-200 pl-2 pr-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 shadow-sm transition hover:shadow-md group ${className}`}>
       {getFileIcon(filename)}
       
       <div className="flex flex-col min-w-0 flex-1">
@@ -80,21 +80,11 @@ const FileChip: React.FC<FileChipProps> = ({ filename, onRemove, className = '' 
             href={isUrl ? filename : '#'} 
             target="_blank" 
             rel="noopener noreferrer"
-            className="truncate max-w-[140px] hover:text-purple-600 hover:underline cursor-pointer font-medium leading-tight" 
+            className="truncate max-w-[120px] hover:text-purple-600 hover:underline cursor-pointer" 
             title={displayName}
         >
             {displayName}
         </a>
-        <span className="text-[10px] text-slate-400 flex items-center gap-1">
-            {isUrl ? (
-                <>
-                <span>ดาวน์โหลด</span>
-                {/* Mock file size since we can't easily get it without headers */}
-                <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                <span>File</span>
-                </>
-            ) : 'พร้อมอัพโหลด'}
-        </span>
       </div>
 
       {isUrl && (
@@ -102,10 +92,10 @@ const FileChip: React.FC<FileChipProps> = ({ filename, onRemove, className = '' 
             href={filename} 
             target="_blank" 
             rel="noopener noreferrer" 
-            className="ml-2 p-1.5 rounded-full bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white transition-colors"
-            title="ดาวน์โหลดไฟล์"
+            className="p-1 rounded-full bg-slate-50 text-purple-500 hover:bg-purple-100 transition-colors"
+            title="ดาวน์โหลด"
         >
-             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
              </svg>
          </a>
@@ -115,9 +105,9 @@ const FileChip: React.FC<FileChipProps> = ({ filename, onRemove, className = '' 
         <button 
           type="button"
           onClick={onRemove}
-          className="ml-2 p-1.5 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+          className="ml-1 p-1 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>

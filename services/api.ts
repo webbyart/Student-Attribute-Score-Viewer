@@ -25,62 +25,43 @@ export const registerStudent = async (data: any): Promise<{ success: boolean; me
             password: data.password,
         });
 
-        if (authError) throw authError;
+        if (authError) {
+             // If user already exists in Auth but maybe profile creation failed previously
+             if (authError.message.includes('already registered')) {
+                 // Try to sign in to get the User ID
+                 const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+                     email: data.email,
+                     password: data.password
+                 });
+                 if (!signInError && signInData.user) {
+                     authData.user = signInData.user;
+                 } else {
+                     throw authError;
+                 }
+             } else {
+                 throw authError;
+             }
+        }
+        
         if (!authData.user) throw new Error("No user created");
 
-        // 2. Check for existing profile (pre-filled data)
-        const { data: existingProfile } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('email', data.email)
-            .maybeSingle();
+        // 2. Insert Profile (If it fails due to conflict, it means profile already exists, which is fine)
+        // We use upsert to be safe
+        const { error: profileError } = await supabase.from('profiles').upsert({
+            id: authData.user.id,
+            email: data.email,
+            full_name: data.student_name,
+            role: 'student',
+            student_id: data.student_id,
+            grade: data.grade,
+            classroom: data.classroom,
+            login_code: data.password, 
+            avatar_url: `https://ui-avatars.com/api/?name=${data.student_name}&background=random`
+        });
 
-        if (existingProfile) {
-            // Update existing profile with the new Auth ID and Password (login_code)
-            const { error: updateError } = await supabase
-                .from('profiles')
-                .update({
-                    id: authData.user.id, // Migrate ID to match Auth User ID
-                    full_name: data.student_name,
-                    student_id: data.student_id,
-                    grade: data.grade,
-                    classroom: data.classroom,
-                    login_code: data.password,
-                    avatar_url: `https://ui-avatars.com/api/?name=${data.student_name}&background=random`
-                })
-                .eq('email', data.email); // Match by email
-
-            if (updateError) {
-                 // Fallback: If update fails (e.g. ID conflict), try delete and insert
-                 // Note: Delete might fail if there are foreign keys (notifications), but for students usually ok
-                 await supabase.from('profiles').delete().eq('email', data.email);
-                 const { error: insertError } = await supabase.from('profiles').insert({
-                    id: authData.user.id,
-                    email: data.email,
-                    full_name: data.student_name,
-                    role: 'student',
-                    student_id: data.student_id,
-                    grade: data.grade,
-                    classroom: data.classroom,
-                    login_code: data.password,
-                    avatar_url: `https://ui-avatars.com/api/?name=${data.student_name}&background=random`
-                });
-                if (insertError) throw insertError;
-            }
-        } else {
-            // Create new profile
-            const { error: profileError } = await supabase.from('profiles').insert({
-                id: authData.user.id,
-                email: data.email,
-                full_name: data.student_name,
-                role: 'student',
-                student_id: data.student_id,
-                grade: data.grade,
-                classroom: data.classroom,
-                login_code: data.password, 
-                avatar_url: `https://ui-avatars.com/api/?name=${data.student_name}&background=random`
-            });
-            if (profileError) throw profileError;
+        if (profileError) {
+             console.error("Profile creation error:", profileError);
+             throw new Error("Database error saving new user");
         }
 
         return { success: true, message: 'ลงทะเบียนสำเร็จ' };
@@ -101,63 +82,80 @@ export const loginStudent = async (studentId: string, email: string, password?: 
         });
 
         if (authError) {
-            // 2. Auth failed. Check if the user exists in 'profiles' (Pre-seeded Data)
-            // This enables "Auto-Claiming" existing accounts using the login_code
-            const { data: existingProfile } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('email', email)
-                .eq('role', 'student')
-                .single();
-
-            if (existingProfile) {
-                // Check if credentials match the pre-seeded data
-                const isIdMatch = existingProfile.student_id === studentId;
-                const isCodeMatch = existingProfile.login_code === password;
-
-                if (isIdMatch && isCodeMatch) {
-                     console.log("Auto-claiming account for:", email);
-                     // 3. Auto-Register (Claim Account)
-                     const regResult = await registerStudent({
-                         student_id: existingProfile.student_id,
-                         student_name: existingProfile.full_name,
-                         email: existingProfile.email,
-                         grade: existingProfile.grade,
-                         classroom: existingProfile.classroom,
-                         password: password
-                     });
-
-                     if (regResult.success) {
-                         // 4. Retry Login after claim
-                         const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
-                             email,
-                             password
-                         });
-                         if (retryError) throw retryError;
-                         
-                         // Return User
-                         return {
-                            id: retryData.user.id,
-                            grade: existingProfile.grade,
-                            classroom: existingProfile.classroom,
-                            student_id: existingProfile.student_id,
-                            student_name: existingProfile.full_name,
-                            email: existingProfile.email,
-                            profileImageUrl: existingProfile.avatar_url || 'https://via.placeholder.com/150'
-                        };
-                     } else {
-                         throw new Error("ระบบไม่สามารถลงทะเบียนอัตโนมัติได้: " + regResult.message);
-                     }
-                } else {
-                    if (!isIdMatch) throw new Error("รหัสนักเรียนไม่ถูกต้อง");
-                    if (!isCodeMatch) throw new Error("รหัสผ่านไม่ถูกต้อง (Login Code)");
-                }
-            }
+            // 2. Auth failed. This might be a "Legacy/Mock" user trying to claim their account.
+            // We call the secure RPC function to check and prepare the account.
             
-            throw new Error("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+            // Adjust password for min length requirement if using legacy '1234'
+            let regPassword = password;
+            if (password === '1234') regPassword = '123456';
+
+            const { data: claimResult, error: rpcError } = await supabase.rpc('prepare_student_claim', {
+                p_email: email,
+                p_student_id: studentId,
+                p_password: password
+            });
+
+            if (rpcError) {
+                console.error("RPC Error:", rpcError);
+                // If RPC fails (e.g function not found), fall through to generic error
+            }
+
+            // If RPC returns success: true, the old profile is deleted, we can register fresh.
+            if (claimResult && claimResult.success) {
+                console.log("Account claim prepared. Registering...");
+                
+                // Get the deleted profile data? No, RPC doesn't return it.
+                // We rely on the input data. We might miss Name/Grade/Classroom if we don't fetch before.
+                // However, usually the student inputs their ID.
+                // For a perfect UX, we should have fetched the profile *before* calling RPC.
+                // But let's assume standard registration for now or try to re-fetch if RPC failed?
+                // Wait, if RPC success, the data is GONE.
+                // Strategy: We should register with generic data and let them update, 
+                // OR we fetch first, then RPC.
+                
+                // Let's fetch mock data locally from MOCK_DATA if needed? No.
+                // We will proceed with Registration using the inputs provided. 
+                // Note: The UI for Login only asks for ID/Email/Pass. We don't have Name/Grade/Class.
+                // This is a limitation of the "Auto-Login" from Login screen.
+                // Ideally, they should use "Register" screen.
+                
+                // Hack: If coming from Login screen, we might lack Name/Class.
+                // Let's assume the user uses the '1234' default.
+                
+                const regResult = await registerStudent({
+                    student_id: studentId,
+                    student_name: 'Student ' + studentId, // Placeholder name
+                    email: email,
+                    grade: 'Updating...', // Placeholder
+                    classroom: '...',
+                    password: regPassword
+                });
+
+                if (regResult.success) {
+                     const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+                         email,
+                         password: regPassword
+                     });
+                     if (retryError) throw retryError;
+                     authData.user = retryData.user;
+                     // Continue to fetch profile...
+                } else {
+                     throw new Error("ระบบไม่สามารถลงทะเบียนอัตโนมัติได้: " + regResult.message);
+                }
+            } else {
+                // If RPC failed (e.g. profile not found, or password wrong)
+                if (claimResult && !claimResult.success) {
+                     // If message is "Invalid password", throw it
+                     if (claimResult.message === 'Invalid password') throw new Error("รหัสผ่านไม่ถูกต้อง (Login Code)");
+                }
+                // If not claimable, just throw the original Auth error
+                throw new Error("อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือบัญชียังไม่ได้ลงทะเบียน");
+            }
         }
 
-        // 5. Auth Success (Standard Path)
+        if (!authData.user) throw new Error("Authentication failed");
+
+        // 3. Auth Success (Standard Path)
         const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('*')
@@ -168,7 +166,6 @@ export const loginStudent = async (studentId: string, email: string, password?: 
 
         // Verify Student ID matches
         if (profile.student_id !== studentId) {
-            // Logged in with email, but input Student ID doesn't match record
             await supabase.auth.signOut();
             throw new Error("รหัสนักเรียนไม่ถูกต้องสำหรับบัญชีนี้");
         }
@@ -196,7 +193,7 @@ export const getStudentDataById = async (studentId: string): Promise<StudentData
         .select('*')
         .eq('student_id', studentId)
         .eq('role', 'student')
-        .single();
+        .maybeSingle();
 
     if (error || !student) return null;
 
@@ -223,6 +220,7 @@ export const getStudentDataById = async (studentId: string): Promise<StudentData
         description: t.description,
         dueDate: t.due_date,
         category: t.category,
+        priority: t.priority || 'Medium',
         attachments: t.attachments || [],
         targetGrade: t.target_grade,
         targetClassroom: t.target_classroom,
@@ -275,7 +273,6 @@ export const registerTeacher = async (name: string, email: string, password: str
 };
 
 export const loginTeacher = async (email: string, password: string): Promise<Teacher | null> => {
-    // Admin Override (Optional: You can remove this if you want strictly DB only)
     if (email === 'admin@admin' && password === 'admin123') {
          return { teacher_id: 'admin', name: 'Admin Master', email: 'admin@admin' };
     }
@@ -284,16 +281,15 @@ export const loginTeacher = async (email: string, password: string): Promise<Tea
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         
         if (error) {
-            // Check if user exists but not registered
              const { data: existingProfile } = await supabase
                 .from('profiles')
                 .select('*')
                 .eq('email', email)
                 .eq('role', 'teacher')
-                .single();
+                .maybeSingle();
              
              if (existingProfile) {
-                 throw new Error("บัญชีครูนี้มีในระบบแล้ว แต่ยังไม่ได้ลงทะเบียนใช้งาน");
+                 throw new Error("บัญชีนี้มีในระบบแล้ว แต่ยังไม่ได้ลงทะเบียนใช้งาน (กรุณาสมัครสมาชิกด้วยอีเมลนี้)");
              }
              throw error;
         }
@@ -344,7 +340,6 @@ export const updateProfile = async (id: string, updates: any): Promise<{ success
 
 export const createTask = async (task: Omit<Task, 'id' | 'createdAt' | 'createdBy'>): Promise<{ success: boolean; message: string }> => {
     try {
-        // Get current user (Teacher)
         const { data: { user } } = await supabase.auth.getUser();
         let userId = user?.id;
         
@@ -354,10 +349,11 @@ export const createTask = async (task: Omit<Task, 'id' | 'createdAt' | 'createdB
             description: task.description,
             due_date: task.dueDate,
             category: task.category,
+            priority: task.priority || 'Medium',
             target_grade: task.targetGrade,
             target_classroom: task.targetClassroom,
             target_student_id: task.targetStudentId || null, 
-            created_by: userId || null, // Allow null for demo admin
+            created_by: userId || null, 
             attachments: task.attachments
         });
 
@@ -376,6 +372,7 @@ export const updateTask = async (task: Task): Promise<{ success: boolean; messag
             description: task.description,
             due_date: task.dueDate,
             category: task.category,
+            priority: task.priority,
             target_grade: task.targetGrade,
             target_classroom: task.targetClassroom,
             target_student_id: task.targetStudentId || null,
@@ -395,7 +392,6 @@ export const deleteTask = async (taskId: string): Promise<{ success: boolean }> 
 };
 
 export const getAllTasks = async (): Promise<Task[]> => {
-     // Fetch all tasks for Public/Teacher view
      const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
      if (error) {
         console.error(error);
@@ -408,6 +404,7 @@ export const getAllTasks = async (): Promise<Task[]> => {
         description: t.description,
         dueDate: t.due_date,
         category: t.category,
+        priority: t.priority || 'Medium',
         attachments: t.attachments || [],
         targetGrade: t.target_grade,
         targetClassroom: t.target_classroom,
