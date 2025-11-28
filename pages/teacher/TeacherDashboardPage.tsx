@@ -8,7 +8,9 @@ import {
     getAllTasks,
     uploadFile,
     getProfiles,
-    updateProfile
+    updateProfile,
+    getSystemSettings,
+    saveSystemSettings
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
@@ -40,6 +42,10 @@ const TeacherDashboardPage: React.FC = () => {
     const [viewingStudentId, setViewingStudentId] = useState<string | null>(null);
     const [userSearch, setUserSearch] = useState('');
     
+    // Settings State
+    const [lineToken, setLineToken] = useState('');
+    const [settingsMessage, setSettingsMessage] = useState('');
+
     // Task Filter State
     const [taskSearch, setTaskSearch] = useState('');
     const [filterGrade, setFilterGrade] = useState('All');
@@ -79,6 +85,9 @@ const TeacherDashboardPage: React.FC = () => {
         if (activeTab === 'users') {
             loadUsers();
         }
+        if (activeTab === 'settings') {
+            loadSettings();
+        }
     }, [activeTab, userType]);
 
     const loadTasks = async () => {
@@ -89,6 +98,17 @@ const TeacherDashboardPage: React.FC = () => {
     const loadUsers = async () => {
         const fetchedUsers = await getProfiles(userType);
         setUsers(fetchedUsers);
+    }
+
+    const loadSettings = async () => {
+        const settings = await getSystemSettings();
+        setLineToken(settings['line_channel_access_token'] || '');
+    }
+
+    const handleSaveSettings = async () => {
+        const result = await saveSystemSettings({ 'line_channel_access_token': lineToken });
+        setSettingsMessage(result.message);
+        setTimeout(() => setSettingsMessage(''), 3000);
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -213,6 +233,7 @@ const TeacherDashboardPage: React.FC = () => {
             grade: editingUser.grade,
             classroom: editingUser.classroom,
             login_code: editingUser.login_code,
+            line_user_id: editingUser.line_user_id
         };
         const result = await updateProfile(editingUser.id, updates);
         if (result.success) {
@@ -540,30 +561,76 @@ const TeacherDashboardPage: React.FC = () => {
                         </div>
                     </div>
                 )}
+
+                {activeTab === 'settings' && (
+                     <div className="space-y-4 animate-fade-in">
+                        <Card>
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-green-100 text-green-600 rounded-full">
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M22 10.5C22 5.25 17.07 1 11 1S0 5.25 0 10.5c0 4.69 3.75 8.59 9 9.35.35.08.83.25.96.56.11.27.07.69.04.99-.08 1.1-.96 3.93-1.07 4.31-.17.61-.09.84.34.84.45 0 1.2-.23 4.96-3.38 3.58.98 7.77-.52 7.77-5.67z"/></svg>
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-800">ตั้งค่า LINE Official Account</h2>
+                                    <p className="text-sm text-slate-500">เชื่อมต่อเพื่อส่งการแจ้งเตือนให้นักเรียน</p>
+                                </div>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Channel Access Token</label>
+                                    <textarea 
+                                        rows={4}
+                                        value={lineToken}
+                                        onChange={(e) => setLineToken(e.target.value)}
+                                        className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-green-200 focus:border-green-400 focus:outline-none transition"
+                                        placeholder="วาง Token ของคุณที่นี่..."
+                                    />
+                                    <p className="text-xs text-slate-400 mt-2">
+                                        * คัดลอก Long-lived access token จาก LINE Developers Console
+                                    </p>
+                                </div>
+
+                                <button 
+                                    onClick={handleSaveSettings}
+                                    className="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-green-600 transition"
+                                >
+                                    บันทึกการตั้งค่า
+                                </button>
+                                {settingsMessage && (
+                                    <p className="text-center text-green-600 text-sm font-medium animate-fade-in">{settingsMessage}</p>
+                                )}
+                            </div>
+                        </Card>
+                     </div>
+                )}
             </div>
 
             {/* Bottom Nav */}
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] px-4 py-2 pb-safe z-40 flex justify-between items-end">
-                <button onClick={() => setActiveTab('calendar')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-1/5 ${activeTab === 'calendar' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                <button onClick={() => setActiveTab('calendar')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'calendar' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     <span className="text-[10px] font-bold">ปฏิทิน</span>
                 </button>
-                <button onClick={() => setActiveTab('schedule')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-1/5 ${activeTab === 'schedule' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                <button onClick={() => setActiveTab('schedule')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'schedule' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     <span className="text-[10px] font-bold">ตารางเรียน</span>
                 </button>
-                <button onClick={() => setActiveTab('post')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-1/5 ${activeTab === 'post' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                <button onClick={() => setActiveTab('post')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'post' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
                     <div className={`w-10 h-10 flex items-center justify-center rounded-full mb-1 shadow-lg ${activeTab === 'post' ? 'bg-purple-600 text-white' : 'bg-purple-500 text-white'}`}>
                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                     </div>
                 </button>
-                <button onClick={() => { setActiveTab('history'); handleCancelEdit(); }} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-1/5 ${activeTab === 'history' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                <button onClick={() => { setActiveTab('history'); handleCancelEdit(); }} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'history' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     <span className="text-[10px] font-bold">ประวัติ</span>
                 </button>
-                <button onClick={() => setActiveTab('users')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-1/5 ${activeTab === 'users' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                <button onClick={() => setActiveTab('users')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'users' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                     <span className="text-[10px] font-bold">ผู้ใช้</span>
+                </button>
+                 <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'settings' ? 'text-green-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <span className="text-[10px] font-bold">ตั้งค่า</span>
                 </button>
             </div>
 
@@ -582,6 +649,7 @@ const TeacherDashboardPage: React.FC = () => {
                             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Login Code</label><input value={editingUser.login_code || ''} onChange={e => setEditingUser({...editingUser, login_code: e.target.value})} placeholder="1234" className="w-full p-2.5 border border-yellow-200 bg-yellow-50 rounded-xl font-mono text-center tracking-widest text-lg font-bold text-yellow-700" /></div>
                             {editingUser.role === 'student' && (<>
                                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Student ID</label><input value={editingUser.student_id || ''} onChange={e => setEditingUser({...editingUser, student_id: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50" required /></div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">LINE User ID</label><input value={editingUser.line_user_id || ''} onChange={e => setEditingUser({...editingUser, line_user_id: e.target.value})} className="w-full p-2.5 border border-green-200 rounded-xl bg-green-50 text-green-700 font-mono text-xs" placeholder="Uxxxxxxxx..." /></div>
                                 <div className="flex gap-3"><div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">ชั้น</label><input value={editingUser.grade || ''} onChange={e => setEditingUser({...editingUser, grade: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl" /></div><div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">ห้อง</label><input value={editingUser.classroom || ''} onChange={e => setEditingUser({...editingUser, classroom: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl" /></div></div>
                             </>)}
                             <div className="flex gap-3 pt-4"><button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-3 text-slate-600 bg-slate-100 rounded-xl font-bold hover:bg-slate-200 transition">ยกเลิก</button><button type="submit" className="flex-1 py-3 text-white bg-purple-600 rounded-xl font-bold shadow-lg shadow-purple-200 hover:bg-purple-700 transition">บันทึก</button></div>

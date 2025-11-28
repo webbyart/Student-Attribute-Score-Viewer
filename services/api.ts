@@ -1,5 +1,5 @@
 
-import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Role, TimetableEntry } from '../types';
+import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Role, TimetableEntry, SystemSettings } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
 // --- Utility ---
@@ -15,22 +15,83 @@ export const testDatabaseConnection = async (): Promise<{ success: boolean; mess
     }
 };
 
+// --- Settings Management ---
+
+export const getSystemSettings = async (): Promise<Record<string, string>> => {
+    try {
+        const { data, error } = await supabase.from('system_settings').select('*');
+        if (error) throw error;
+        
+        const settings: Record<string, string> = {};
+        data?.forEach((item: SystemSettings) => {
+            settings[item.key] = item.value;
+        });
+        return settings;
+    } catch (e) {
+        console.error("Error fetching settings:", e);
+        return {};
+    }
+}
+
+export const saveSystemSettings = async (settings: Record<string, string>): Promise<{ success: boolean; message: string }> => {
+    try {
+        const upserts = Object.entries(settings).map(([key, value]) => ({ key, value }));
+        const { error } = await supabase.from('system_settings').upsert(upserts);
+        if (error) throw error;
+        return { success: true, message: 'บันทึกการตั้งค่าสำเร็จ' };
+    } catch (e: any) {
+        return { success: false, message: e.message };
+    }
+}
+
+// --- LINE Integration ---
+
+export const sendLineNotification = async (lineUserId: string, message: string) => {
+    // Note: Calling LINE API directly from frontend is insecure due to exposed keys and CORS.
+    // In a production app, this should be an Edge Function or Backend endpoint.
+    // For this demo, we simulate the logic or attempt a call if configured.
+    
+    try {
+        const settings = await getSystemSettings();
+        const token = settings['line_channel_access_token'];
+        
+        if (!token) {
+            console.warn("LINE Channel Access Token not configured.");
+            return;
+        }
+
+        // Simulating backend call structure
+        console.log(`Sending LINE Message to ${lineUserId}: ${message}`);
+        
+        /* 
+        // Actual implementation requires a backend proxy to avoid CORS.
+        const response = await fetch('https://api.line.me/v2/bot/message/push', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                to: lineUserId,
+                messages: [{ type: 'text', text: message }]
+            })
+        });
+        */
+    } catch (e) {
+        console.error("Failed to send LINE notification", e);
+    }
+}
+
 // --- Student Auth & Data ---
 
 export const prepareStudentClaim = async (email: string, studentId: string, password?: string) => {
-    // Note: The actual RPC call should be implemented here if using client-side logic wrapper
-    // But we are calling supabase.rpc directly in loginStudent.
     // Keeping this function as a placeholder if we need abstraction later.
     return; 
 };
 
 export const registerStudent = async (data: any): Promise<{ success: boolean; message: string }> => {
     try {
-        // 0. Pre-check: If user exists in Auth, but not in Profile (edge case), or vice versa.
-        // Actually, let's rely on the delete-then-insert strategy which is safer for this "claim" model.
-
         // 1. Delete Existing Profile and Notifications (Sample Data Cleanup)
-        // We must check if there is a conflict first.
         const { data: existingProfile } = await supabase
             .from('profiles')
             .select('id')
@@ -53,7 +114,6 @@ export const registerStudent = async (data: any): Promise<{ success: boolean; me
 
         if (authError) {
              if (authError.message.includes('already registered')) {
-                 // Try to sign in
                  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
                      email: data.email,
                      password: data.password
@@ -80,6 +140,7 @@ export const registerStudent = async (data: any): Promise<{ success: boolean; me
             grade: data.grade,
             classroom: data.classroom,
             login_code: data.password, 
+            line_user_id: data.lineUserId || null, // Capture LINE ID if present
             avatar_url: `https://ui-avatars.com/api/?name=${data.student_name}&background=random`
         });
 
@@ -106,9 +167,7 @@ export const loginStudent = async (studentId: string, email: string, password?: 
         });
 
         if (authError) {
-            // 2. Auth failed. This might be a "Legacy/Mock" user trying to claim their account.
-            
-            // Adjust password for min length requirement if using legacy '1234'
+            // 2. Auth failed. Attempt Legacy Claim
             let regPassword = password;
             if (password === '1234') regPassword = '123456';
 
@@ -119,24 +178,10 @@ export const loginStudent = async (studentId: string, email: string, password?: 
                 p_password: password
             });
 
-            if (rpcError) {
-                console.error("RPC Error:", rpcError);
-            }
+            if (rpcError) console.error("RPC Error:", rpcError);
 
             if (claimResult && claimResult.success) {
-                console.log("Account claim prepared. Registering...");
-                
-                // We use placeholder data for the missing fields, assuming user will update later or Admin has set it correct in the logic (but we deleted it).
-                // Wait, if we deleted the profile, we lost the name/grade/class!
-                // Ideally, the RPC should return the old data before deleting, OR we fetch it first.
-                // Let's improve the flow: fetch mock data first.
-
-                // Actually, the RPC is strict. 
-                // Let's rely on a simpler flow: User uses "Register" if they want full data control, 
-                // OR we just register with placeholders and they fix it.
-                // Or better: The RPC *could* return the old data if we modified it.
-                
-                // For now, let's just register with the Student ID as name placeholder.
+                // Register new auth account
                 const regResult = await registerStudent({
                     student_id: studentId,
                     student_name: 'Student ' + studentId, 
@@ -175,7 +220,6 @@ export const loginStudent = async (studentId: string, email: string, password?: 
 
         if (profileError || !profile) throw new Error("ไม่พบข้อมูลผู้ใช้งานในระบบ");
 
-        // Verify Student ID matches
         if (profile.student_id !== studentId) {
             await supabase.auth.signOut();
             throw new Error("รหัสนักเรียนไม่ถูกต้องสำหรับบัญชีนี้");
@@ -188,7 +232,8 @@ export const loginStudent = async (studentId: string, email: string, password?: 
             student_id: profile.student_id,
             student_name: profile.full_name,
             email: profile.email,
-            profileImageUrl: profile.avatar_url || 'https://via.placeholder.com/150'
+            profileImageUrl: profile.avatar_url || 'https://via.placeholder.com/150',
+            lineUserId: profile.line_user_id
         };
 
     } catch (e: any) {
@@ -215,14 +260,30 @@ export const getStudentDataById = async (studentId: string): Promise<StudentData
         student_id: student.student_id,
         student_name: student.full_name,
         email: student.email,
-        profileImageUrl: student.avatar_url
+        profileImageUrl: student.avatar_url,
+        lineUserId: student.line_user_id
     };
 
     // 2. Get Tasks
-    const { data: tasks, error: taskError } = await supabase
+    // Allow viewing tasks created by Teacher (Assigned) OR created by Student (Personal)
+    const { data: tasks } = await supabase
         .from('tasks')
         .select('*')
-        .or(`and(target_grade.eq.${student.grade},target_classroom.eq.${student.classroom}),target_student_id.eq.${student.student_id},and(target_grade.is.null,target_student_id.is.null)`);
+        .or(`and(target_grade.eq.${student.grade},target_classroom.eq.${student.classroom}),target_student_id.eq.${student.student_id},and(target_grade.is.null,target_student_id.is.null),created_by.eq.${student.id}`);
+
+    // 3. Get Task Status for this student
+    const { data: taskStatuses } = await supabase
+        .from('student_task_status')
+        .select('task_id, is_completed')
+        .eq('student_id', student.id);
+    
+    // Create a map for quick lookup
+    const statusMap = new Map();
+    if (taskStatuses) {
+        taskStatuses.forEach((status: any) => {
+            statusMap.set(status.task_id, status.is_completed);
+        });
+    }
 
     const mappedTasks: Task[] = (tasks || []).map((t: any) => ({
         id: t.id,
@@ -236,11 +297,12 @@ export const getStudentDataById = async (studentId: string): Promise<StudentData
         targetGrade: t.target_grade,
         targetClassroom: t.target_classroom,
         targetStudentId: t.target_student_id,
-        createdBy: 'Teacher', 
-        createdAt: t.created_at
+        createdBy: t.created_by === student.id ? 'Student' : 'Teacher', 
+        createdAt: t.created_at,
+        isCompleted: statusMap.get(t.id) || false // Merge status
     }));
 
-    // 3. Get Notifications
+    // 4. Get Notifications
     const { data: notifications } = await supabase
         .from('notifications')
         .select('*')
@@ -256,8 +318,42 @@ export const getStudentDataById = async (studentId: string): Promise<StudentData
     };
 };
 
+export const toggleTaskStatus = async (studentId: string, taskId: string, isCompleted: boolean): Promise<boolean> => {
+    try {
+        // Find the profile UUID from student_id (string)
+         const { data: profile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('student_id', studentId)
+            .single();
+        
+        if (!profile) return false;
+
+        const { error } = await supabase.from('student_task_status').upsert({
+            student_id: profile.id,
+            task_id: taskId,
+            is_completed: isCompleted,
+            completed_at: isCompleted ? new Date().toISOString() : null
+        }, { onConflict: 'student_id, task_id' });
+
+        return !error;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
+};
+
 export const markNotificationRead = async (notificationId: string) => {
     await supabase.from('notifications').update({ is_read: true }).eq('id', notificationId);
+};
+
+export const createBackup = async (userId: string): Promise<boolean> => {
+    const { error } = await supabase.from('backup_logs').insert({
+        user_id: userId,
+        backup_type: 'Manual',
+        status: 'Success'
+    });
+    return !error;
 };
 
 // --- Teacher Auth & Data ---
@@ -359,7 +455,6 @@ export const getTimetable = async (grade: string, classroom: string): Promise<Ti
             .order('period_index', { ascending: true });
         
         if (error) {
-            // Handle case where table might not exist yet gracefully for demo
             console.warn("Timetable fetch error (possibly table missing):", error);
             return [];
         }
@@ -377,7 +472,7 @@ export const createTask = async (task: Omit<Task, 'id' | 'createdAt' | 'createdB
         const { data: { user } } = await supabase.auth.getUser();
         let userId = user?.id;
         
-        const { error } = await supabase.from('tasks').insert({
+        const { data: newTask, error } = await supabase.from('tasks').insert({
             title: task.title,
             subject: task.subject,
             description: task.description,
@@ -389,9 +484,18 @@ export const createTask = async (task: Omit<Task, 'id' | 'createdAt' | 'createdB
             target_student_id: task.targetStudentId || null, 
             created_by: userId || null, 
             attachments: task.attachments
-        });
+        }).select().single();
 
         if (error) throw error;
+        
+        // --- Notify via LINE if Individual Assignment ---
+        if (task.targetStudentId && newTask) {
+             const { data: student } = await supabase.from('profiles').select('line_user_id').eq('student_id', task.targetStudentId).single();
+             if (student && student.line_user_id) {
+                 sendLineNotification(student.line_user_id, `คุณได้รับงานใหม่: ${task.title}\nวิชา: ${task.subject}\nส่ง: ${new Date(task.dueDate).toLocaleString('th-TH')}`);
+             }
+        }
+
         return { success: true, message: 'โพสต์ภาระงานสำเร็จ' };
     } catch (e: any) {
         return { success: false, message: e.message };
@@ -444,7 +548,7 @@ export const getAllTasks = async (): Promise<Task[]> => {
         targetClassroom: t.target_classroom,
         target_student_id: t.target_student_id,
         targetStudentId: t.target_student_id,
-        createdBy: 'Teacher',
+        createdBy: 'Teacher', // Simplified
         createdAt: t.created_at
      }));
 }

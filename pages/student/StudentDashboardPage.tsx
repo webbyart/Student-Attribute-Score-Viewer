@@ -1,32 +1,54 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Card from '../../components/ui/Card';
-import { useOutletContext, useNavigate } from 'react-router-dom';
-import { StudentData, TaskCategory, TaskCategoryLabel } from '../../types';
-import { markNotificationRead } from '../../services/api';
+import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
+import { StudentData, TaskCategory, TaskCategoryLabel, Task } from '../../types';
+import { markNotificationRead, toggleTaskStatus } from '../../services/api';
 
 const StudentDashboardPage: React.FC = () => {
-  const { student, tasks, notifications } = useOutletContext<StudentData>();
-  const navigate = useNavigate();
+  // We need local state for tasks to update UI instantly when checked
+  const contextData = useOutletContext<StudentData>();
+  const [localTasks, setLocalTasks] = useState<Task[]>(contextData.tasks);
   const [showNotifications, setShowNotifications] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    setLocalTasks(contextData.tasks);
+  }, [contextData.tasks]);
+
+  const { student, notifications } = contextData;
 
   // Filter tasks due in the future for notifications area
-  const upcomingTasks = tasks
-    .filter(t => new Date(t.dueDate) >= new Date())
+  const upcomingTasks = localTasks
+    .filter(t => !t.isCompleted && new Date(t.dueDate) >= new Date())
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 3); // Show only top 3
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
+  // Progress Calculation
+  const totalTasks = localTasks.length;
+  const completedTasks = localTasks.filter(t => t.isCompleted).length;
+  const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
   const handleNotificationClick = async () => {
       setShowNotifications(!showNotifications);
       if (unreadCount > 0) {
-          // Mark visible notifications as read
            notifications.forEach(n => {
                if(!n.is_read) markNotificationRead(n.id);
            });
       }
   }
+
+  const handleToggleTask = async (task: Task) => {
+      const newStatus = !task.isCompleted;
+      
+      // Optimistic Update
+      setLocalTasks(prev => prev.map(t => t.id === task.id ? { ...t, isCompleted: newStatus } : t));
+
+      // API Call
+      await toggleTaskStatus(student.student_id, task.id, newStatus);
+  };
 
   const menus = [
     { label: TaskCategoryLabel[TaskCategory.CLASS_SCHEDULE], category: TaskCategory.CLASS_SCHEDULE, icon: '📅', color: 'bg-blue-100 text-blue-600' },
@@ -82,6 +104,20 @@ const StudentDashboardPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Progress Card */}
+      <Card className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-none shadow-lg shadow-indigo-200">
+          <div className="flex justify-between items-end mb-2">
+              <div>
+                  <h3 className="font-bold text-lg">ความคืบหน้าของฉัน</h3>
+                  <p className="text-xs text-indigo-100">งานที่เสร็จสิ้น {completedTasks} จาก {totalTasks} งาน</p>
+              </div>
+              <div className="text-3xl font-bold">{progressPercentage}%</div>
+          </div>
+          <div className="w-full bg-black/20 rounded-full h-2.5">
+              <div className="bg-white h-2.5 rounded-full transition-all duration-500" style={{ width: `${progressPercentage}%` }}></div>
+          </div>
+      </Card>
+
       {/* Main Menu Grid */}
       <div>
         <h2 className="text-lg font-bold text-slate-700 mb-3">เมนูหลัก</h2>
@@ -110,37 +146,51 @@ const StudentDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Notification / Upcoming Feed */}
+      {/* Upcoming Tasks Feed */}
       <div>
         <div className="flex justify-between items-center mb-3">
-             <h2 className="text-lg font-bold text-slate-700">ภาระงานใกล้ถึงกำหนด</h2>
+             <h2 className="text-lg font-bold text-slate-700">ภาระงานใกล้ถึงกำหนด (ที่ต้องทำ)</h2>
              <span className="text-xs text-purple-600 cursor-pointer" onClick={() => navigate('schedule')}>ดูทั้งหมด</span>
         </div>
       
         {upcomingTasks.length > 0 ? (
             <div className="space-y-3">
-                {upcomingTasks.map(task => (
-                    <div key={task.id} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-l-purple-500 flex justify-between items-center">
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold">{TaskCategoryLabel[task.category]}</span>
-                                {new Date(task.dueDate).getTime() - new Date().getTime() < 86400000 && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-bold">ด่วน</span>
-                                )}
+                {upcomingTasks.map(task => {
+                    let priorityBadge = null;
+                    if(task.priority === 'High') priorityBadge = <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-bold">High</span>
+                    
+                    return (
+                        <div key={task.id} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-l-purple-500 flex justify-between items-center">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold">{TaskCategoryLabel[task.category]}</span>
+                                    {priorityBadge}
+                                    {new Date(task.dueDate).getTime() - new Date().getTime() < 86400000 && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-bold">ด่วน</span>
+                                    )}
+                                </div>
+                                <h3 className="font-bold text-slate-800 text-sm line-clamp-1">{task.title}</h3>
+                                <p className="text-xs text-slate-500">{task.subject}</p>
                             </div>
-                            <h3 className="font-bold text-slate-800 text-sm">{task.title}</h3>
-                            <p className="text-xs text-slate-500">{task.subject}</p>
+                            <div className="flex items-center gap-3">
+                                 <div className="text-right">
+                                     <p className="text-xs font-bold text-slate-700">{new Date(task.dueDate).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})}</p>
+                                     <p className="text-[10px] text-slate-400">{new Date(task.dueDate).toLocaleDateString('th-TH', {day: 'numeric', month:'short'})}</p>
+                                 </div>
+                                 <button 
+                                    onClick={() => handleToggleTask(task)}
+                                    className="w-8 h-8 rounded-full border-2 border-slate-300 flex items-center justify-center hover:bg-green-50 hover:border-green-400 transition"
+                                 >
+                                     <div className="w-full h-full rounded-full bg-transparent"></div>
+                                 </button>
+                             </div>
                         </div>
-                         <div className="text-right">
-                             <p className="text-xs font-bold text-slate-700">{new Date(task.dueDate).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})}</p>
-                             <p className="text-[10px] text-slate-400">{new Date(task.dueDate).toLocaleDateString('th-TH', {day: 'numeric', month:'short'})}</p>
-                         </div>
-                    </div>
-                ))}
+                    )
+                })}
             </div>
         ) : (
             <Card className="text-center py-8 text-slate-500 text-sm">
-                ไม่มีรายการภาระงานใกล้ถึงกำหนด
+                ไม่มีงานค้างที่ใกล้ถึงกำหนด! เยี่ยมมาก 🎉
             </Card>
         )}
       </div>

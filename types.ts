@@ -7,6 +7,7 @@ export interface Student {
   student_name: string;
   email: string;
   profileImageUrl: string;
+  lineUserId?: string; // Added for LINE Integration
 }
 
 export enum TaskCategory {
@@ -51,13 +52,15 @@ export interface Task {
   description: string;
   dueDate: string; // ISO
   category: TaskCategory;
-  priority?: 'High' | 'Medium' | 'Low'; // Added priority
+  priority?: 'High' | 'Medium' | 'Low'; 
   attachments: string[]; // filenames or URLs
   targetGrade: string;
   targetClassroom: string;
   targetStudentId?: string; // Added for individual assignment
   createdBy: string;
   createdAt: string;
+  // New properties for student tracking
+  isCompleted?: boolean;
 }
 
 export interface TimetableEntry {
@@ -101,6 +104,14 @@ export interface Score {
   comment?: string;
 }
 
+export interface BackupLog {
+    id: string;
+    user_id: string;
+    backup_type: string;
+    status: string;
+    created_at: string;
+}
+
 // Combined data structure for student view
 export interface StudentData {
   student: Student;
@@ -123,4 +134,10 @@ export interface User {
   profileImageUrl: string;
   class: string;
   role: Role;
+  lineUserId?: string;
+}
+
+export interface SystemSettings {
+    key: string;
+    value: string;
 }

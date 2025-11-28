@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabaseClient';
 
 const StudentSearchPage: React.FC = () => {
   const [studentId, setStudentId] = useState('');
@@ -28,6 +29,20 @@ const StudentSearchPage: React.FC = () => {
         setError('กรุณากรอกข้อมูลให้ครบถ้วน');
     }
   };
+
+  const handleLineLogin = async () => {
+      // Initiate Supabase OAuth with LINE
+      // Note: This requires 'line' provider to be enabled in Supabase Dashboard
+      const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'line',
+          options: {
+              redirectTo: window.location.origin + '/student/login',
+          }
+      });
+      if (error) {
+          setError('การเชื่อมต่อกับ LINE มีปัญหา: ' + error.message);
+      }
+  }
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-sky-100 via-blue-100 to-indigo-100 p-4">
@@ -82,6 +97,18 @@ const StudentSearchPage: React.FC = () => {
               {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
             </button>
           </form>
+
+           {/* LINE Login Button */}
+           <div className="mt-4 pt-4 border-t border-slate-200">
+               <button
+                  onClick={handleLineLogin}
+                  className="w-full bg-[#06C755] hover:bg-[#05b54c] text-white font-bold py-3 px-4 rounded-xl shadow-sm transition flex items-center justify-center gap-2"
+               >
+                   <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M22 10.5C22 5.25 17.07 1 11 1S0 5.25 0 10.5c0 4.69 3.75 8.59 9 9.35.35.08.83.25.96.56.11.27.07.69.04.99-.08 1.1-.96 3.93-1.07 4.31-.17.61-.09.84.34.84.45 0 1.2-.23 4.96-3.38 3.58.98 7.77-.52 7.77-5.67z"/></svg>
+                   เข้าสู่ระบบด้วย LINE
+               </button>
+           </div>
+
            <p className="text-sm text-slate-600 mt-6">
             ยังไม่มีบัญชี? <Link to="/student/register" className="font-semibold text-sky-600 hover:underline">ลงทะเบียนที่นี่</Link>
           </p>
