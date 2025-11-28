@@ -2,8 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CalendarView from '../components/ui/CalendarView';
-import Card from '../components/ui/Card';
-import { Task, TaskCategoryLabel } from '../types';
+import { Task } from '../types';
 import { testDatabaseConnection, getAllTasks } from '../services/api';
 import { supabase } from '../lib/supabaseClient';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
@@ -41,7 +40,6 @@ const PublicCalendarPage: React.FC = () => {
   }, [tasks, selectedDate]);
 
   const fetchTasks = async () => {
-      // Use getAllTasks which pulls from Supabase 'tasks' table directly
       const data = await getAllTasks();
       setTasks(data);
       setLoading(false);
@@ -59,65 +57,47 @@ const PublicCalendarPage: React.FC = () => {
 
   const handleDateClick = (date: Date, _dayTasks: Task[]) => {
       setSelectedDate(date);
-      // We re-filter from the main state to ensure we have the latest data
       filterTasksByDate(date, tasks);
       setIsDayModalOpen(true);
   };
 
   const handleTaskClick = (task: Task) => {
       setSelectedTaskForModal(task);
-      // Optional: close day modal if we want deeper drill down without back navigation, 
-      // but keeping it open allows "Back" behavior by just closing detail modal.
   }
-
-  const handleTestConnection = async () => {
-      setIsTesting(true);
-      const result = await testDatabaseConnection();
-      alert(result.message);
-      setIsTesting(false);
-  };
 
   if (loading) {
       return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><LoadingSpinner /></div>;
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      {/* Header */}
-      <div className="bg-white px-4 py-4 shadow-sm flex justify-between items-center sticky top-0 z-20">
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      {/* Header - Compact & Sticky */}
+      <div className="bg-white px-4 py-3 shadow-sm flex justify-between items-center sticky top-0 z-20 shrink-0">
         <div>
-            <h1 className="text-xl font-bold text-slate-800">ตารางกิจกรรม</h1>
-            <p className="text-xs text-slate-500">โรงเรียนของเรา</p>
+            <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                📅 ปฏิทินกิจกรรม
+            </h1>
         </div>
         <button 
             onClick={() => navigate('/login-select')}
-            className="bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-full shadow-md hover:bg-slate-700 transition"
+            className="bg-purple-600 text-white text-xs font-bold px-4 py-2 rounded-full shadow-md hover:bg-purple-700 transition"
         >
             เข้าสู่ระบบ
         </button>
       </div>
 
-      <div className="p-4 space-y-6 max-w-md mx-auto">
-        {/* Calendar */}
-        <CalendarView tasks={tasks} onDateClick={handleDateClick} />
-
-        <div className="text-center text-xs text-slate-400">
-            แตะที่วันที่เพื่อดูรายการกิจกรรม
+      {/* Main Content - Full Height / Responsive */}
+      <div className="flex-1 p-2 md:p-4 flex flex-col h-full w-full max-w-7xl mx-auto">
+        <div className="flex-1 flex flex-col">
+            <CalendarView tasks={tasks} onDateClick={handleDateClick} />
         </div>
-
-        {/* Connection Test Button */}
-        <div className="flex justify-center mt-8 pt-4 border-t border-slate-200">
-             <button 
-                onClick={handleTestConnection}
-                disabled={isTesting}
-                className="text-xs text-slate-400 bg-slate-100 px-3 py-2 rounded hover:bg-slate-200 transition"
-             >
-                {isTesting ? 'กำลังทดสอบ...' : '🛠️ ทดสอบการเชื่อมต่อฐานข้อมูล'}
-             </button>
+        
+        <div className="text-center text-xs text-slate-400 mt-2 pb-safe">
+            แตะที่วันที่เพื่อดูรายการกิจกรรม
         </div>
       </div>
 
-      {/* Day Events Modal (List of tasks for the day) */}
+      {/* Day Events Modal */}
       {isDayModalOpen && (
           <DayEventsModal 
             date={selectedDate}

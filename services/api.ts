@@ -20,15 +20,27 @@ export const testDatabaseConnection = async (): Promise<{ success: boolean; mess
 export const getSystemSettings = async (): Promise<Record<string, string>> => {
     try {
         const { data, error } = await supabase.from('system_settings').select('*');
-        if (error) throw error;
+        if (error) {
+            // Check for "relation does not exist" error (Code 42P01) or specific schema cache error
+            if (error.code === '42P01' || error.message.includes('Could not find the table')) {
+                console.warn("Table 'system_settings' not found. Please run the SQL migration script.");
+                return {};
+            }
+            throw error;
+        }
         
         const settings: Record<string, string> = {};
         data?.forEach((item: SystemSettings) => {
             settings[item.key] = item.value;
         });
         return settings;
-    } catch (e) {
-        console.error("Error fetching settings:", e);
+    } catch (e: any) {
+        // If it's the specific schema cache error, treat as empty settings
+        if (e.message && (e.message.includes('Could not find the table') || e.message.includes('system_settings'))) {
+             console.warn("System settings table check failed (likely missing table). Returning empty settings.");
+             return {};
+        }
+        console.error("Error fetching settings:", e.message || e);
         return {};
     }
 }
@@ -37,7 +49,12 @@ export const saveSystemSettings = async (settings: Record<string, string>): Prom
     try {
         const upserts = Object.entries(settings).map(([key, value]) => ({ key, value }));
         const { error } = await supabase.from('system_settings').upsert(upserts);
-        if (error) throw error;
+        if (error) {
+             if (error.code === '42P01' || error.message.includes('Could not find the table')) {
+                 return { success: false, message: "ไม่พบตาราง system_settings กรุณารัน SQL Script" };
+             }
+             throw error;
+        }
         return { success: true, message: 'บันทึกการตั้งค่าสำเร็จ' };
     } catch (e: any) {
         return { success: false, message: e.message };
@@ -49,8 +66,6 @@ export const saveSystemSettings = async (settings: Record<string, string>): Prom
 export const sendLineNotification = async (lineUserId: string, message: string) => {
     // Note: Calling LINE API directly from frontend is insecure due to exposed keys and CORS.
     // In a production app, this should be an Edge Function or Backend endpoint.
-    // For this demo, we simulate the logic or attempt a call if configured.
-    
     try {
         const settings = await getSystemSettings();
         const token = settings['line_channel_access_token'];
@@ -60,11 +75,18 @@ export const sendLineNotification = async (lineUserId: string, message: string) 
             return;
         }
 
-        // Simulating backend call structure
         console.log(`Sending LINE Message to ${lineUserId}: ${message}`);
-        
-        /* 
-        // Actual implementation requires a backend proxy to avoid CORS.
+        // Attempt to send (will likely fail CORS in browser unless proxy used)
+        await testLineNotification(token, lineUserId, message);
+    } catch (e) {
+        console.error("Failed to send LINE notification", e);
+    }
+}
+
+export const testLineNotification = async (token: string, userId: string, customMessage?: string): Promise<{ success: boolean, message: string }> => {
+    if (!token || !userId) return { success: false, message: 'กรุณาระบุ Token และ User ID' };
+
+    try {
         const response = await fetch('https://api.line.me/v2/bot/message/push', {
             method: 'POST',
             headers: {
@@ -72,13 +94,24 @@ export const sendLineNotification = async (lineUserId: string, message: string) 
                 'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
-                to: lineUserId,
-                messages: [{ type: 'text', text: message }]
+                to: userId,
+                messages: [{ type: 'text', text: customMessage || '🔔 ทดสอบการแจ้งเตือนจากระบบ Student Activity Viewer' }]
             })
         });
-        */
-    } catch (e) {
-        console.error("Failed to send LINE notification", e);
+
+        if (response.ok) {
+            return { success: true, message: 'ส่งข้อความสำเร็จ!' };
+        } else {
+            const errorData = await response.json();
+            return { success: false, message: `ส่งไม่สำเร็จ: ${errorData.message || response.statusText}` };
+        }
+    } catch (e: any) {
+        console.error(e);
+        // Handle common CORS error in browser environment
+        if (e.message.includes('Failed to fetch') || e.name === 'TypeError') {
+             return { success: false, message: 'CORS Blocked: เบราว์เซอร์บล็อกการส่ง API โดยตรง (ต้องใช้ Backend หรือ Proxy ในงานจริง)' };
+        }
+        return { success: false, message: `Error: ${e.message}` };
     }
 }
 
@@ -296,6 +329,7 @@ export const getStudentDataById = async (studentId: string): Promise<StudentData
         attachments: t.attachments || [],
         targetGrade: t.target_grade,
         targetClassroom: t.target_classroom,
+        target_student_id: t.target_student_id,
         targetStudentId: t.target_student_id,
         createdBy: t.created_by === student.id ? 'Student' : 'Teacher', 
         createdAt: t.created_at,

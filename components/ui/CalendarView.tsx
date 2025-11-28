@@ -36,9 +36,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onDateClick }) => {
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex flex-col h-full">
       {/* Header */}
-      <div className="flex justify-between items-center p-4 bg-slate-800 text-white">
+      <div className="flex justify-between items-center p-3 bg-slate-800 text-white shrink-0">
         <button onClick={prevMonth} className="p-1 hover:bg-white/20 rounded-full transition">
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
@@ -51,7 +51,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onDateClick }) => {
       </div>
 
       {/* Days Header */}
-      <div className="grid grid-cols-7 text-center border-b border-slate-100 bg-slate-50">
+      <div className="grid grid-cols-7 text-center border-b border-slate-100 bg-slate-50 shrink-0">
         {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((day, i) => (
           <div key={i} className={`py-2 text-xs font-semibold ${i === 0 || i === 6 ? 'text-red-400' : 'text-slate-600'}`}>
             {day}
@@ -59,10 +59,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onDateClick }) => {
         ))}
       </div>
 
-      {/* Calendar Grid */}
-      <div className="grid grid-cols-7 auto-rows-fr">
+      {/* Calendar Grid - Responsive Height */}
+      <div className="grid grid-cols-7 auto-rows-fr flex-1 bg-white">
         {daysArray.map((day, index) => {
-          if (!day) return <div key={index} className="h-24 bg-slate-50/30 border-b border-r border-slate-100"></div>;
+          if (!day) return <div key={index} className="border-b border-r border-slate-50 bg-slate-50/10"></div>;
           
           const dayTasks = getTasksForDay(day);
           const isToday = day === new Date().getDate() && currentDate.getMonth() === new Date().getMonth() && currentDate.getFullYear() === new Date().getFullYear();
@@ -70,24 +70,26 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onDateClick }) => {
           return (
             <div 
                 key={index} 
-                className={`h-24 p-1 border-b border-r border-slate-100 relative cursor-pointer hover:bg-slate-50 transition ${isToday ? 'bg-purple-50/50' : ''}`}
+                className={`min-h-[10vh] md:min-h-[100px] p-1 border-b border-r border-slate-100 relative cursor-pointer hover:bg-slate-50 transition flex flex-col ${isToday ? 'bg-purple-50/40' : ''}`}
                 onClick={() => onDateClick && onDateClick(new Date(currentDate.getFullYear(), currentDate.getMonth(), day), dayTasks)}
             >
-              <span className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-purple-600 text-white shadow-md' : 'text-slate-700'}`}>
-                {day}
-              </span>
+              <div className="flex justify-center mb-1">
+                 <span className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-purple-600 text-white shadow-md' : 'text-slate-700'}`}>
+                    {day}
+                 </span>
+              </div>
               
-              <div className="flex flex-col gap-1 mt-1 overflow-hidden">
+              <div className="flex flex-col gap-1 overflow-hidden flex-1">
                 {dayTasks.slice(0, 3).map((task, i) => {
                     const colors = getCategoryColor(task.category);
                     return (
-                        <div key={i} className={`text-[9px] px-1 py-0.5 rounded truncate ${colors.bg} ${colors.text} border ${colors.border}`}>
+                        <div key={i} className={`text-[9px] px-1 py-0.5 rounded truncate leading-tight ${colors.bg} ${colors.text} border ${colors.border}`}>
                             {task.title}
                         </div>
                     );
                 })}
                 {dayTasks.length > 3 && (
-                    <div className="text-[9px] text-slate-400 text-center font-medium">+{dayTasks.length - 3}</div>
+                    <div className="text-[9px] text-slate-400 text-center font-medium mt-auto leading-none">+{dayTasks.length - 3}</div>
                 )}
               </div>
             </div>

@@ -10,7 +10,8 @@ import {
     getProfiles,
     updateProfile,
     getSystemSettings,
-    saveSystemSettings
+    saveSystemSettings,
+    testLineNotification
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
@@ -42,9 +43,11 @@ const TeacherDashboardPage: React.FC = () => {
     const [viewingStudentId, setViewingStudentId] = useState<string | null>(null);
     const [userSearch, setUserSearch] = useState('');
     
-    // Settings State
-    const [lineToken, setLineToken] = useState('');
+    // Settings State - Pre-filled with provided credentials
+    const [lineToken, setLineToken] = useState('vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=');
+    const [testUserId, setTestUserId] = useState('Ua276c047d87982958a524c1f5ac30f08');
     const [settingsMessage, setSettingsMessage] = useState('');
+    const [isSendingTest, setIsSendingTest] = useState(false);
 
     // Task Filter State
     const [taskSearch, setTaskSearch] = useState('');
@@ -73,12 +76,28 @@ const TeacherDashboardPage: React.FC = () => {
 
     useEffect(() => {
         loadTasks();
-        const channel = supabase.channel('realtime-tasks')
+
+        // Real-time Subscription for Tasks
+        const taskChannel = supabase.channel('realtime-tasks')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
             loadTasks();
         })
         .subscribe();
-        return () => { supabase.removeChannel(channel); }
+
+        // Real-time Subscription for Users (Profiles)
+        const profileChannel = supabase.channel('realtime-profiles')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+            // Only reload users if we are currently viewing the users tab to save resources
+            // Note: We use a functional update or ref in a real complex app, but here simplistic approach works
+            // or we just set a flag. For simplicity, we'll reload if the tab is active or just reload always (safer).
+            loadUsers(); 
+        })
+        .subscribe();
+
+        return () => { 
+            supabase.removeChannel(taskChannel);
+            supabase.removeChannel(profileChannel);
+        }
     }, []);
 
     useEffect(() => {
@@ -102,13 +121,23 @@ const TeacherDashboardPage: React.FC = () => {
 
     const loadSettings = async () => {
         const settings = await getSystemSettings();
-        setLineToken(settings['line_channel_access_token'] || '');
+        if (settings['line_channel_access_token']) {
+            setLineToken(settings['line_channel_access_token']);
+        }
     }
 
     const handleSaveSettings = async () => {
         const result = await saveSystemSettings({ 'line_channel_access_token': lineToken });
         setSettingsMessage(result.message);
         setTimeout(() => setSettingsMessage(''), 3000);
+    }
+
+    const handleTestLine = async () => {
+        setIsSendingTest(true);
+        const result = await testLineNotification(lineToken, testUserId);
+        setSettingsMessage(result.message);
+        setIsSendingTest(false);
+        setTimeout(() => setSettingsMessage(''), 5000);
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -284,7 +313,9 @@ const TeacherDashboardPage: React.FC = () => {
             <div className="px-4 py-4">
                 {activeTab === 'calendar' && (
                     <div className="animate-fade-in space-y-4">
-                        <CalendarView tasks={tasks} onDateClick={handleDateClick} />
+                        <div className="h-[60vh]">
+                            <CalendarView tasks={tasks} onDateClick={handleDateClick} />
+                        </div>
                         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                             {Object.values(TaskCategory).map((cat, i) => {
                                 const colors = getCategoryColor(cat);
@@ -295,6 +326,11 @@ const TeacherDashboardPage: React.FC = () => {
                                 );
                             })}
                         </div>
+                        <Card className="mt-4">
+                             <div className="text-center py-2 text-slate-500 text-sm">
+                                ปฏิทินรวมงานทั้งหมด (แตะที่วันที่เพื่อดูรายละเอียด)
+                             </div>
+                        </Card>
                     </div>
                 )}
 
@@ -563,7 +599,7 @@ const TeacherDashboardPage: React.FC = () => {
                 )}
 
                 {activeTab === 'settings' && (
-                     <div className="space-y-4 animate-fade-in">
+                     <div className="space-y-4 animate-fade-in pb-12">
                         <Card>
                             <div className="flex items-center gap-3 mb-6">
                                 <div className="p-3 bg-green-100 text-green-600 rounded-full">
@@ -575,14 +611,14 @@ const TeacherDashboardPage: React.FC = () => {
                                 </div>
                             </div>
                             
-                            <div className="space-y-4">
+                            <div className="space-y-6">
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-2">Channel Access Token</label>
                                     <textarea 
                                         rows={4}
                                         value={lineToken}
                                         onChange={(e) => setLineToken(e.target.value)}
-                                        className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-green-200 focus:border-green-400 focus:outline-none transition"
+                                        className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-green-200 focus:border-green-400 focus:outline-none transition break-all"
                                         placeholder="วาง Token ของคุณที่นี่..."
                                     />
                                     <p className="text-xs text-slate-400 mt-2">
@@ -596,8 +632,37 @@ const TeacherDashboardPage: React.FC = () => {
                                 >
                                     บันทึกการตั้งค่า
                                 </button>
+                                
+                                <div className="pt-6 border-t border-slate-100">
+                                    <h3 className="text-sm font-bold text-slate-700 mb-3">ทดสอบการแจ้งเตือน</h3>
+                                    <div className="bg-slate-50 p-4 rounded-xl space-y-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">User ID สำหรับทดสอบ</label>
+                                            <input 
+                                                type="text" 
+                                                value={testUserId} 
+                                                onChange={(e) => setTestUserId(e.target.value)}
+                                                className="w-full p-2 text-sm border border-slate-200 rounded-lg font-mono"
+                                                placeholder="Uxxxxxxxx..."
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={handleTestLine}
+                                            disabled={isSendingTest}
+                                            className="w-full bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300 transition text-sm flex justify-center items-center gap-2"
+                                        >
+                                            {isSendingTest ? 'กำลังส่ง...' : (
+                                                <>
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                                                    ส่งข้อความทดสอบ
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {settingsMessage && (
-                                    <p className="text-center text-green-600 text-sm font-medium animate-fade-in">{settingsMessage}</p>
+                                    <p className={`text-center text-sm font-medium animate-fade-in p-3 rounded-lg ${settingsMessage.includes('ล้มเหลว') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>{settingsMessage}</p>
                                 )}
                             </div>
                         </Card>

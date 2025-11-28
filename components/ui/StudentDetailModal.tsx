@@ -4,6 +4,7 @@ import { StudentData, Task, TaskCategoryLabel } from '../../types';
 import { getStudentDataById } from '../../services/api';
 import FileChip from './FileChip';
 import LoadingSpinner from './LoadingSpinner';
+import { supabase } from '../../lib/supabaseClient';
 
 interface StudentDetailModalProps {
   studentId: string; // The "std001" ID
@@ -14,13 +15,35 @@ const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentId, onCl
   const [data, setData] = useState<StudentData | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchData = async () => {
+    const studentData = await getStudentDataById(studentId);
+    setData(studentData);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      const studentData = await getStudentDataById(studentId);
-      setData(studentData);
-      setLoading(false);
-    };
     fetchData();
+
+    // Subscribe to task updates (e.g., new assignments)
+    const taskChannel = supabase.channel(`student-tasks-${studentId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+             // We refresh for any task change. Optimization: could filter by grade/class
+             fetchData();
+        })
+        .subscribe();
+    
+    // Subscribe to status updates (e.g., student marks done)
+    // Note: We listen to all status changes and rely on fetchData to get the right ones.
+    const statusChannel = supabase.channel(`student-status-${studentId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'student_task_status' }, () => {
+             fetchData();
+        })
+        .subscribe();
+
+    return () => { 
+        supabase.removeChannel(taskChannel);
+        supabase.removeChannel(statusChannel);
+    };
   }, [studentId]);
 
   if (!studentId) return null;
@@ -72,15 +95,15 @@ const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentId, onCl
                         </div>
                         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 text-center">
                             <span className="block text-2xl font-bold text-red-500">
-                                {data.tasks.filter(t => new Date(t.dueDate) < new Date()).length}
+                                {data.tasks.filter(t => !t.isCompleted && new Date(t.dueDate) < new Date()).length}
                             </span>
                             <span className="text-xs text-slate-500">เลยกำหนด</span>
                         </div>
                         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 text-center">
                             <span className="block text-2xl font-bold text-green-500">
-                                {data.tasks.filter(t => new Date(t.dueDate) >= new Date()).length}
+                                {data.tasks.filter(t => t.isCompleted).length}
                             </span>
-                            <span className="text-xs text-slate-500">กำลังจะถึง</span>
+                            <span className="text-xs text-slate-500">เสร็จแล้ว</span>
                         </div>
                     </div>
 
@@ -93,9 +116,9 @@ const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentId, onCl
                         {data.tasks.length > 0 ? (
                             <div className="space-y-3">
                                 {data.tasks.map(task => {
-                                    const isOverdue = new Date(task.dueDate) < new Date();
+                                    const isOverdue = !task.isCompleted && new Date(task.dueDate) < new Date();
                                     return (
-                                        <div key={task.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                                        <div key={task.id} className={`p-4 rounded-xl shadow-sm border transition-all ${task.isCompleted ? 'bg-green-50 border-green-200' : 'bg-white border-slate-100'}`}>
                                             <div className="flex justify-between items-start mb-2">
                                                 <div className="flex gap-2">
                                                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
@@ -107,11 +130,14 @@ const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentId, onCl
                                                         </span>
                                                     )}
                                                 </div>
-                                                <span className={`text-xs font-medium ${isOverdue ? 'text-red-500' : 'text-green-600'}`}>
-                                                    {new Date(task.dueDate).toLocaleDateString('th-TH', {day: 'numeric', month: 'short'})}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {task.isCompleted && <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">✓ เสร็จแล้ว</span>}
+                                                    <span className={`text-xs font-medium ${isOverdue ? 'text-red-500' : 'text-slate-500'}`}>
+                                                        {new Date(task.dueDate).toLocaleDateString('th-TH', {day: 'numeric', month: 'short'})}
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <h4 className="font-bold text-slate-800">{task.title}</h4>
+                                            <h4 className={`font-bold ${task.isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{task.title}</h4>
                                             <p className="text-sm text-slate-500 mb-2">{task.subject}</p>
                                             
                                             {task.attachments.length > 0 && (
