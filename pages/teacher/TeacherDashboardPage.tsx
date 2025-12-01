@@ -246,6 +246,15 @@ const TeacherDashboardPage: React.FC = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!teacher) return;
+        
+        // Safety check: Ensure we have a valid session before submitting
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            alert("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่");
+            window.location.reload();
+            return;
+        }
+
         setIsSubmitting(true);
         setMessage('');
 
@@ -266,30 +275,34 @@ const TeacherDashboardPage: React.FC = () => {
             createdBy: teacher.name,
         };
 
-        if (editingTaskId) {
-             const result = await updateTask({
-                id: editingTaskId,
-                ...taskPayload,
-                createdAt: new Date().toISOString() 
-            });
+        try {
+            if (editingTaskId) {
+                 const result = await updateTask({
+                    id: editingTaskId,
+                    ...taskPayload,
+                    createdAt: new Date().toISOString() 
+                });
 
-            if (result.success) {
-                setMessage('แก้ไขข้อมูลสำเร็จ');
-                handleCancelEdit();
-                loadTasks();
+                if (result.success) {
+                    setMessage('แก้ไขข้อมูลสำเร็จ');
+                    handleCancelEdit();
+                    loadTasks();
+                } else {
+                    setMessage('เกิดข้อผิดพลาดในการแก้ไข: ' + result.message);
+                }
             } else {
-                setMessage('เกิดข้อผิดพลาดในการแก้ไข: ' + result.message);
-            }
-        } else {
-            const result = await createTask(taskPayload);
+                const result = await createTask(taskPayload);
 
-            if (result.success) {
-                setMessage('บันทึกข้อมูลและส่งแจ้งเตือนเรียบร้อยแล้ว');
-                handleCancelEdit();
-                loadTasks();
-            } else {
-                setMessage('เกิดข้อผิดพลาด: ' + result.message);
+                if (result.success) {
+                    setMessage('บันทึกข้อมูลและส่งแจ้งเตือนเรียบร้อยแล้ว');
+                    handleCancelEdit();
+                    loadTasks();
+                } else {
+                    setMessage('เกิดข้อผิดพลาด: ' + result.message);
+                }
             }
+        } catch (error: any) {
+             setMessage('เกิดข้อผิดพลาด: ' + (error.message || 'Unknown error'));
         }
         setIsSubmitting(false);
     };

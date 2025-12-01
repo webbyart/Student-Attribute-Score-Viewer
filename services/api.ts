@@ -6,7 +6,12 @@ import { supabase } from '../lib/supabaseClient';
 
 export const testDatabaseConnection = async (): Promise<{ success: boolean; message: string }> => {
     try {
-        const { count, error } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+        // Add a timeout to prevent hanging on network errors
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timed out')), 5000));
+        const dbPromise = supabase.from('profiles').select('*', { count: 'exact', head: true });
+        
+        const { count, error } = await Promise.race([dbPromise, timeoutPromise]) as any;
+        
         if (error) throw error;
         return { success: true, message: `เชื่อมต่อฐานข้อมูลสำเร็จ! (พบผู้ใช้งาน ${count || 0} คน)` };
     } catch (e: any) {
@@ -283,6 +288,9 @@ export const saveSystemSettings = async (settings: Record<string, string>): Prom
              if (error.code === '42P01' || error.message.includes('Could not find the table') || error.message.includes('relation "system_settings" does not exist')) {
                  return { success: false, message: "ไม่พบตาราง system_settings กรุณารัน SQL Script ตรวจสอบระบบ" };
              }
+             if (error.message.includes('row-level security')) {
+                 return { success: false, message: "ไม่มีสิทธิ์บันทึกค่า (RLS Error): โปรดตรวจสอบว่าบัญชีของคุณเป็น Teacher หรือไม่" };
+             }
              throw error;
         }
         return { success: true, message: 'บันทึกการตั้งค่าสำเร็จ' };
@@ -328,7 +336,7 @@ export const generateTaskFlexMessage = (task: Task) => {
     }
 
     const priorityBadge = task.priority === 'High' ? '🔥 ด่วน' : (task.priority === 'Medium' ? '⭐ สำคัญ' : 'ปกติ');
-    const priorityColor = task.priority === 'High' ? '#EF4444' : (task.priority === 'Medium' ? '#F59E0B' : '#999999');
+    // const priorityColor = task.priority === 'High' ? '#EF4444' : (task.priority === 'Medium' ? '#F59E0B' : '#999999');
 
     // LINE Flex Message JSON Structure
     return {
@@ -535,11 +543,10 @@ export const testLineNotification = async (token: string, userId: string, messag
             ? [{ type: 'text', text: message }] 
             : [message]; 
 
-        // NOTE: This fetch will FAIL in a browser due to CORS. 
-        // Real implementation requires a Backend Proxy or Supabase Edge Function.
-        console.log("🚀 Sending to LINE API:", JSON.stringify({ to: userId, messages }, null, 2));
+        // Use CORS Proxy to bypass browser restrictions
+        console.log("🚀 Sending to LINE API via Proxy:", JSON.stringify({ to: userId, messages }, null, 2));
 
-        const response = await fetch('https://api.line.me/v2/bot/message/push', {
+        const response = await fetch('https://corsproxy.io/?' + encodeURIComponent('https://api.line.me/v2/bot/message/push'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -558,15 +565,10 @@ export const testLineNotification = async (token: string, userId: string, messag
             return { success: false, message: `ส่งไม่สำเร็จ (API Error): ${errorData.message || response.statusText}` };
         }
     } catch (e: any) {
-        console.warn("LINE API Network Error (Likely CORS):", e);
-        
-        // --- CORS EXPLANATION FOR USER ---
-        // Browser cannot send directly to LINE API. 
-        // We return success here to show the UI flow works, but the message WON'T arrive on phone 
-        // unless you use a backend proxy.
+        console.warn("LINE API Network Error:", e);
         return { 
-            success: true, 
-            message: `⚠️ ส่งคำสั่งแล้ว (แต่ Browser บล็อก): คุณต้องใช้ Backend Proxy เพื่อให้ข้อความถึง LINE จริงๆ` 
+            success: false, 
+            message: `เกิดข้อผิดพลาดเครือข่าย: ${e.message}` 
         };
     }
 }
@@ -854,18 +856,35 @@ export const createBackup = async (userId: string): Promise<boolean> => {
 
 export const registerTeacher = async (name: string, email: string, password: string): Promise<{ success: boolean; message: string; }> => {
     try {
-        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
-        if (authError) throw authError;
-        if (!authData.user) throw new Error("User creation failed");
-
-        const { error: profileError } = await supabase.from('profiles').insert({
-            id: authData.user.id,
-            email,
-            full_name: name,
-            role: 'teacher',
-            avatar_url: `https://ui-avatars.com/api/?name=${name}&background=random`
+        const { data: authData, error: authError } = await supabase.auth.signUp({ 
+            email, 
+            password,
+            options: {
+                data: { full_name: name, role: 'teacher' }
+            }
         });
-        if (profileError) throw profileError;
+        
+        if (authError) {
+            // Re-throw specific errors so caller can handle them
+            throw authError;
+        }
+        
+        // Check if registration requires email confirmation
+        if (authData.user && !authData.session) {
+             return { success: false, message: 'กรุณายืนยันอีเมลก่อนเข้าใช้งาน (ตรวจสอบ Inbox ของคุณ หรือปิด Confirm Email ใน Supabase)' };
+        }
+        
+        if (authData.user) {
+             // Create Profile
+            const { error: profileError } = await supabase.from('profiles').upsert({
+                id: authData.user.id,
+                email: email,
+                full_name: name,
+                role: 'teacher',
+                avatar_url: `https://ui-avatars.com/api/?name=${name}&background=random`
+            });
+            if (profileError) console.error("Profile creation warning:", profileError);
+        }
 
         return { success: true, message: 'ลงทะเบียนครูสำเร็จ' };
     } catch (e: any) {
@@ -874,29 +893,100 @@ export const registerTeacher = async (name: string, email: string, password: str
 };
 
 export const loginTeacher = async (email: string, password: string): Promise<Teacher | null> => {
-    if (email === 'admin@admin' && password === 'admin123') {
-         return { teacher_id: 'admin', name: 'Admin Master', email: 'admin@admin' };
-    }
-
     try {
+        // 1. Attempt Login
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         
         if (error) {
-             const { data: existingProfile } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('email', email)
-                .eq('role', 'teacher')
-                .maybeSingle();
-             
-             if (existingProfile) {
-                 throw new Error("บัญชีนี้มีในระบบแล้ว แต่ยังไม่ได้ลงทะเบียนใช้งาน (กรุณาสมัครสมาชิกด้วยอีเมลนี้)");
+             console.log("Login failed:", error.message);
+
+             // Handle Email Not Confirmed specifically
+             if (error.message.includes("Email not confirmed")) {
+                 throw new Error("อีเมลนี้ยังไม่ได้ยืนยันตัวตน (หากใช้อีเมลปลอม กรุณาปิด 'Confirm email' ใน Supabase Authentication -> Providers -> Email)");
+             }
+
+             // 2. Special Handling for "admin@admin": Auto-Heal / Auto-Register
+             if (email === 'admin@admin' && password === 'admin123') {
+                 // Only try to register if the error suggests user doesn't exist or credentials failed (maybe account deleted)
+                 if (error.message.includes("Invalid login credentials")) {
+                     console.log("Admin account might be missing. Attempting auto-registration...");
+                     
+                     const regResult = await registerTeacher('Admin Master', email, password);
+                     
+                     if (regResult.success) {
+                         // Retry login immediately
+                         const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({ email, password });
+                         if (!retryError && retryData.user) {
+                             // Force profile creation just in case
+                             await supabase.from('profiles').upsert({
+                                id: retryData.user.id,
+                                email: email,
+                                full_name: 'Admin Master',
+                                role: 'teacher',
+                                avatar_url: `https://ui-avatars.com/api/?name=Admin&background=random`
+                             });
+                             return { teacher_id: retryData.user.id, name: 'Admin Master', email };
+                         }
+                     } else if (regResult.message.includes('ยืนยันอีเมล')) {
+                         // Registration worked but needs confirmation
+                         throw new Error("ระบบสร้างบัญชี Admin แล้ว แต่ติดการยืนยันอีเมล (กรุณาปิด 'Confirm email' ใน Supabase)");
+                     } else if (regResult.message.includes("already registered")) {
+                         // User exists, password must be wrong
+                         throw new Error("รหัสผ่านไม่ถูกต้อง (หากลืมรหัสผ่าน Admin ให้ลบ User ใน Supabase Auth แล้วลองใหม่)");
+                     }
+                 }
              }
              throw error;
         }
 
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
-        if (!profile || profile.role !== 'teacher') return null;
+        if (!data.user) throw new Error("Authentication successful but no user data returned");
+
+        // 3. Fetch Profile
+        const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .maybeSingle();
+        
+        // 4. Auto-Create Profile if missing (Robustness for Admin or manually deleted profiles)
+        if (!profile) {
+            console.log("Profile missing for existing auth user, creating...");
+            const { error: insertError } = await supabase.from('profiles').insert({
+                id: data.user.id,
+                email: email,
+                full_name: email.includes('admin') ? 'Admin Master' : 'Teacher',
+                role: 'teacher',
+                avatar_url: `https://ui-avatars.com/api/?name=${email}&background=random`
+            });
+            
+            if (insertError) throw insertError;
+            
+            return { 
+                teacher_id: data.user.id, 
+                name: email.includes('admin') ? 'Admin Master' : 'Teacher', 
+                email 
+            };
+        } 
+        
+        // 5. Ensure Role is Teacher (Fix for Admin if role got messed up)
+        if (profile.role !== 'teacher') {
+            if (email === 'admin@admin') {
+                await supabase.from('profiles').update({ role: 'teacher' }).eq('id', data.user.id);
+                return { teacher_id: profile.id, name: profile.full_name, email: profile.email };
+            }
+            throw new Error("บัญชีนี้ไม่ใช่บัญชีครู (Role: " + profile.role + ")");
+        }
+
+        // 6. Force Upsert Profile for Admin to ensure RLS passes (Fix for RLS errors)
+        if (email === 'admin@admin') {
+             await supabase.from('profiles').upsert({
+                id: data.user.id,
+                email: email,
+                full_name: 'Admin Master',
+                role: 'teacher',
+                avatar_url: `https://ui-avatars.com/api/?name=Admin&background=random`
+             });
+        }
 
         return {
             teacher_id: profile.id,
@@ -904,21 +994,135 @@ export const loginTeacher = async (email: string, password: string): Promise<Tea
             email: profile.email
         };
     } catch (e: any) {
-        console.error("Teacher Login Error:", e);
         throw e;
     }
 };
 
-// --- Profile Management ---
+// --- Task CRUD & Teacher Utils ---
 
-export const getProfiles = async (role: 'student' | 'teacher') => {
+export const getAllTasks = async (): Promise<Task[]> => {
+    try {
+        const { data, error } = await supabase
+            .from('tasks')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        return (data || []).map((t: any) => ({
+            id: t.id,
+            title: t.title,
+            subject: t.subject,
+            description: t.description,
+            dueDate: t.due_date,
+            category: t.category,
+            priority: t.priority || 'Medium',
+            attachments: t.attachments || [],
+            targetGrade: t.target_grade,
+            targetClassroom: t.target_classroom,
+            targetStudentId: t.target_student_id,
+            createdBy: 'Teacher',
+            createdAt: t.created_at,
+            isCompleted: false 
+        }));
+    } catch (e: any) {
+        console.error("Error fetching tasks:", e.message);
+        return [];
+    }
+};
+
+export const createTask = async (task: any): Promise<{ success: boolean; message: string }> => {
+    try {
+         const { data: { user } } = await supabase.auth.getUser();
+         
+         const dbTask = {
+            title: task.title,
+            subject: task.subject,
+            description: task.description,
+            due_date: task.dueDate,
+            category: task.category,
+            priority: task.priority,
+            target_grade: task.targetGrade,
+            target_classroom: task.targetClassroom,
+            target_student_id: task.targetStudentId || null,
+            attachments: task.attachments,
+            created_by: user?.id
+        };
+
+        const { error } = await supabase.from('tasks').insert(dbTask);
+        
+        if (error) throw error;
+        return { success: true, message: 'สร้างงานสำเร็จ' };
+    } catch (e: any) {
+        return { success: false, message: e.message };
+    }
+};
+
+export const updateTask = async (task: any): Promise<{ success: boolean; message: string }> => {
+    try {
+        const dbTask = {
+            title: task.title,
+            subject: task.subject,
+            description: task.description,
+            due_date: task.dueDate,
+            category: task.category,
+            priority: task.priority,
+            target_grade: task.targetGrade,
+            target_classroom: task.targetClassroom,
+            target_student_id: task.targetStudentId || null,
+            attachments: task.attachments,
+        };
+
+        const { error } = await supabase.from('tasks').update(dbTask).eq('id', task.id);
+        
+        if (error) throw error;
+        return { success: true, message: 'แก้ไขงานสำเร็จ' };
+    } catch (e: any) {
+        return { success: false, message: e.message };
+    }
+};
+
+export const deleteTask = async (taskId: string): Promise<{ success: boolean; message: string }> => {
+    try {
+        const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+        if (error) throw error;
+        return { success: true, message: 'ลบงานสำเร็จ' };
+    } catch (e: any) {
+        return { success: false, message: e.message };
+    }
+};
+
+export const uploadFile = async (file: File): Promise<string | null> => {
+    try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('attachments')
+            .upload(filePath, file);
+
+        if (uploadError) {
+             console.error('Upload error (check if bucket "attachments" exists):', uploadError);
+             return null;
+        }
+
+        const { data } = supabase.storage.from('attachments').getPublicUrl(filePath);
+        return data.publicUrl;
+    } catch (e) {
+        console.error('File upload exception:', e);
+        return null;
+    }
+};
+
+export const getProfiles = async (role: 'student' | 'teacher'): Promise<any[]> => {
     try {
         const { data, error } = await supabase
             .from('profiles')
             .select('*')
             .eq('role', role)
-            .order('created_at', { ascending: false });
-        
+            .order('full_name');
+            
         if (error) throw error;
         return data || [];
     } catch (e) {
@@ -937,8 +1141,6 @@ export const updateProfile = async (id: string, updates: any): Promise<{ success
     }
 };
 
-// --- Timetable Management ---
-
 export const getTimetable = async (grade: string, classroom: string): Promise<TimetableEntry[]> => {
     try {
         const { data, error } = await supabase
@@ -946,135 +1148,15 @@ export const getTimetable = async (grade: string, classroom: string): Promise<Ti
             .select('*')
             .eq('grade', grade)
             .eq('classroom', classroom)
-            .order('period_index', { ascending: true });
-        
+            .order('period_index');
+
         if (error) {
-            return [];
+             if (error.code === '42P01') return []; 
+             throw error;
         }
         return data || [];
     } catch (e) {
+        console.error("Error fetching timetable:", e);
         return [];
     }
 };
-
-// --- Task Management ---
-
-export const createTask = async (task: Omit<Task, 'id' | 'createdAt' | 'createdBy'>): Promise<{ success: boolean; message: string }> => {
-    try {
-        const { data: { user } } = await supabase.auth.getUser();
-        let userId = user?.id;
-        
-        const { data: newTask, error } = await supabase.from('tasks').insert({
-            title: task.title,
-            subject: task.subject,
-            description: task.description,
-            due_date: task.dueDate,
-            category: task.category,
-            priority: task.priority || 'Medium',
-            target_grade: task.targetGrade,
-            target_classroom: task.targetClassroom,
-            target_student_id: task.targetStudentId || null, 
-            created_by: userId || null, 
-            attachments: task.attachments
-        }).select().single();
-
-        if (error) throw error;
-        
-        // --- Notify via LINE if Individual Assignment ---
-        if (task.targetStudentId && newTask) {
-             const { data: student } = await supabase.from('profiles').select('line_user_id').eq('student_id', task.targetStudentId).single();
-             if (student && student.line_user_id) {
-                 // Convert the new task to a full Task object (mocking ID/Dates) for the generator
-                 const fullTask: Task = {
-                     id: newTask.id,
-                     title: task.title,
-                     subject: task.subject,
-                     description: task.description,
-                     dueDate: task.dueDate,
-                     category: task.category,
-                     priority: task.priority || 'Medium',
-                     attachments: task.attachments,
-                     targetGrade: task.targetGrade,
-                     targetClassroom: task.targetClassroom,
-                     createdAt: new Date().toISOString(),
-                     createdBy: 'Teacher'
-                 };
-                 await sendLineNotification(student.line_user_id, fullTask);
-             }
-        }
-
-        return { success: true, message: 'โพสต์ภาระงานสำเร็จ' };
-    } catch (e: any) {
-        return { success: false, message: e.message };
-    }
-};
-
-export const updateTask = async (task: Task): Promise<{ success: boolean; message: string }> => {
-    try {
-        const { error } = await supabase.from('tasks').update({
-            title: task.title,
-            subject: task.subject,
-            description: task.description,
-            due_date: task.dueDate,
-            category: task.category,
-            priority: task.priority,
-            target_grade: task.targetGrade,
-            target_classroom: task.targetClassroom,
-            target_student_id: task.targetStudentId || null,
-            attachments: task.attachments
-        }).eq('id', task.id);
-
-        if (error) throw error;
-        return { success: true, message: 'แก้ไขข้อมูลสำเร็จ' };
-    } catch (e: any) {
-        return { success: false, message: e.message };
-    }
-};
-
-export const deleteTask = async (taskId: string): Promise<{ success: boolean }> => {
-    const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-    return { success: !error };
-};
-
-export const getAllTasks = async (): Promise<Task[]> => {
-     try {
-        const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
-        if (error) return [];
-        return data.map((t: any) => ({
-           id: t.id,
-           title: t.title,
-           subject: t.subject,
-           description: t.description,
-           dueDate: t.due_date,
-           category: t.category,
-           priority: t.priority || 'Medium',
-           attachments: t.attachments || [],
-           targetGrade: t.target_grade,
-           target_classroom: t.target_classroom,
-           targetClassroom: t.target_classroom,
-           target_student_id: t.target_student_id,
-           targetStudentId: t.target_student_id,
-           createdBy: 'Teacher',
-           createdAt: t.created_at
-        }));
-     } catch (e) {
-         return [];
-     }
-}
-
-export const uploadFile = async (file: File): Promise<string | null> => {
-    try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
-        const filePath = `${fileName}`;
-
-        const { error: uploadError } = await supabase.storage.from('attachments').upload(filePath, file);
-        if (uploadError) throw uploadError;
-
-        const { data } = supabase.storage.from('attachments').getPublicUrl(filePath);
-        return data.publicUrl;
-    } catch (e) {
-        console.error(e);
-        return null;
-    }
-}

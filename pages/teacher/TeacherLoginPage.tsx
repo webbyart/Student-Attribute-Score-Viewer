@@ -21,7 +21,17 @@ const TeacherLoginPage: React.FC = () => {
           navigate('/teacher/dashboard');
         }
     } catch (err: any) {
-        setError(err.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+        console.error("Login Error UI:", err);
+        let msg = err.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ';
+        
+        // Translate common Supabase errors for better UX
+        if (msg.includes('Invalid login credentials')) {
+            msg = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+        } else if (msg.includes('Email not confirmed')) {
+            msg = 'อีเมลนี้ยังไม่ได้ยืนยันตัวตน (กรุณาตรวจสอบ Email)';
+        }
+        
+        setError(msg);
     }
   };
 

@@ -1,6 +1,8 @@
+
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Teacher } from '../types';
 import { loginTeacher as apiLoginTeacher } from '../services/api';
+import { supabase } from '../lib/supabaseClient';
 
 interface TeacherAuthContextType {
   teacher: Teacher | null;
@@ -20,7 +22,39 @@ export const TeacherAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
       return null;
     }
   });
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // Validate session on mount
+  useEffect(() => {
+    const validateSession = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session && teacher) {
+            // Session expired but state exists -> Clear state
+            setTeacher(null);
+            window.sessionStorage.removeItem('teacher');
+        } else if (session && !teacher) {
+            // Session exists but state missing -> Try to restore (optional, basic restore)
+             const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+             if (profile && profile.role === 'teacher') {
+                 const restoredTeacher = { teacher_id: profile.id, name: profile.full_name, email: profile.email };
+                 setTeacher(restoredTeacher);
+             }
+        }
+        setLoading(false);
+    };
+    validateSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') {
+            setTeacher(null);
+            window.sessionStorage.removeItem('teacher');
+        }
+    });
+
+    return () => {
+        subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (teacher) {
@@ -38,13 +72,14 @@ export const TeacherAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
       return loggedInTeacher;
     } catch (error) {
       console.error("Login failed:", error);
-      return null;
+      throw error; // Re-throw to let the page handle the specific error message
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setTeacher(null);
   };
 
