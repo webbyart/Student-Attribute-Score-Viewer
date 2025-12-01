@@ -31,16 +31,22 @@ const StudentSearchPage: React.FC = () => {
   };
 
   const handleLineLogin = async () => {
-      // Initiate Supabase OAuth with LINE
-      // Note: This requires 'line' provider to be enabled in Supabase Dashboard
-      const { data, error } = await supabase.auth.signInWithOAuth({
-          provider: 'line',
-          options: {
-              redirectTo: window.location.origin + '/student/login',
+      setError('');
+      try {
+          // Initiate Supabase OAuth with LINE
+          const { data, error } = await supabase.auth.signInWithOAuth({
+              provider: 'line',
+              options: {
+                  redirectTo: window.location.origin + '/student/login',
+              }
+          });
+          if (error) throw error;
+      } catch (e: any) {
+          if (e.message.includes('Unsupported provider')) {
+              setError('⚠️ คุณยังไม่ได้เปิดใช้งาน LINE Login ใน Supabase Dashboard (Auth > Providers)');
+          } else {
+              setError('การเชื่อมต่อกับ LINE มีปัญหา: ' + e.message);
           }
-      });
-      if (error) {
-          setError('การเชื่อมต่อกับ LINE มีปัญหา: ' + error.message);
       }
   }
 

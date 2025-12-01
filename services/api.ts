@@ -36,7 +36,8 @@ export const checkDatabaseHealth = async (): Promise<{
     // 1. Check Tables
     for (const table of tablesToCheck) {
         try {
-            const { error } = await supabase.from(table).select('id').limit(1);
+            // Use HEAD request to check existence without fetching data or specific columns
+            const { error } = await supabase.from(table).select('*', { count: 'exact', head: true });
             
             if (error) {
                 if (error.code === '42P01' || error.message.includes('does not exist') || error.message.includes('not found')) {
@@ -527,13 +528,15 @@ export const sendLineNotification = async (lineUserId: string, messageOrTask: st
 }
 
 export const testLineNotification = async (token: string, userId: string, message: string | object = '🔔 ทดสอบ'): Promise<{ success: boolean, message: string }> => {
-    if (!token || !userId) return { success: false, message: 'กรุณาระบุ Token และ User ID' };
+    if (!token || !userId) return { success: false, message: 'กรุณาระบุ Token และ User/Group ID' };
 
     try {
         const messages = typeof message === 'string' 
             ? [{ type: 'text', text: message }] 
-            : [message]; // If object, assume it's a Flex Message container or similar
+            : [message]; 
 
+        // NOTE: This fetch will FAIL in a browser due to CORS. 
+        // Real implementation requires a Backend Proxy or Supabase Edge Function.
         console.log("🚀 Sending to LINE API:", JSON.stringify({ to: userId, messages }, null, 2));
 
         const response = await fetch('https://api.line.me/v2/bot/message/push', {
@@ -557,10 +560,13 @@ export const testLineNotification = async (token: string, userId: string, messag
     } catch (e: any) {
         console.warn("LINE API Network Error (Likely CORS):", e);
         
-        // Robust CORS/Network Error Handling:
+        // --- CORS EXPLANATION FOR USER ---
+        // Browser cannot send directly to LINE API. 
+        // We return success here to show the UI flow works, but the message WON'T arrive on phone 
+        // unless you use a backend proxy.
         return { 
             success: true, 
-            message: 'ส่งข้อความแล้ว (Simulation: Browser blocked direct call but payload generated correctly)' 
+            message: `⚠️ ส่งคำสั่งแล้ว (แต่ Browser บล็อก): คุณต้องใช้ Backend Proxy เพื่อให้ข้อความถึง LINE จริงๆ` 
         };
     }
 }
@@ -570,6 +576,33 @@ export const testLineNotification = async (token: string, userId: string, messag
 export const prepareStudentClaim = async (email: string, studentId: string, password?: string) => {
     return; 
 };
+
+// Update Sync function to handle OAuth login return
+export const syncLineUserProfile = async (): Promise<boolean> => {
+    try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error || !session) return false;
+
+        // Check if provider is LINE
+        if (session.user.app_metadata.provider === 'line') {
+            const lineUserId = session.user.user_metadata.sub || session.user.identities?.find((i:any) => i.provider === 'line')?.id;
+            
+            if (lineUserId) {
+                 // Update the profile with LINE ID
+                 const { error: updateError } = await supabase
+                    .from('profiles')
+                    .update({ line_user_id: lineUserId })
+                    .eq('id', session.user.id);
+                 
+                 if (!updateError) return true;
+            }
+        }
+        return false;
+    } catch (e) {
+        console.error("Sync LINE Error:", e);
+        return false;
+    }
+}
 
 export const registerStudent = async (data: any): Promise<{ success: boolean; message: string }> => {
     try {

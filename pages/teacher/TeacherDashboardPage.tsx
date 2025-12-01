@@ -49,6 +49,7 @@ const TeacherDashboardPage: React.FC = () => {
     const [lineToken, setLineToken] = useState('vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=');
     const [lineSecret, setLineSecret] = useState('b7cd5cc937837ad847aba3bf851576d9');
     const [testUserId, setTestUserId] = useState('Ua276c047d87982958a524c1f5ac30f08');
+    const [testGroupId, setTestGroupId] = useState(''); // Added Group ID State
     const [settingsMessage, setSettingsMessage] = useState('');
     const [isSendingTest, setIsSendingTest] = useState(false);
     
@@ -135,6 +136,10 @@ const TeacherDashboardPage: React.FC = () => {
         if (settings['line_channel_secret']) {
             setLineSecret(settings['line_channel_secret']);
         }
+        // Load stored test group ID if available (optional)
+        if (settings['test_group_id']) {
+            setTestGroupId(settings['test_group_id']);
+        }
     }
 
     const handleCheckDb = async () => {
@@ -148,17 +153,23 @@ const TeacherDashboardPage: React.FC = () => {
     const handleSaveSettings = async () => {
         const result = await saveSystemSettings({ 
             'line_channel_access_token': lineToken,
-            'line_channel_secret': lineSecret
+            'line_channel_secret': lineSecret,
+            'test_group_id': testGroupId // Save the group ID too for convenience
         });
         setSettingsMessage(result.message);
         setTimeout(() => setSettingsMessage(''), 3000);
     }
 
-    const handleTestLine = async () => {
+    const handleTestLine = async (targetId: string, type: 'User' | 'Group') => {
+        if (!targetId) {
+            setSettingsMessage(`กรุณาระบุ ${type} ID ก่อนทดสอบ`);
+            return;
+        }
+
         setIsSendingTest(true);
         // Create a dummy task to test the Flex Message generator
         const dummyTask: any = {
-            title: 'ทดสอบส่งการบ้าน (Flex)',
+            title: `ทดสอบส่งเข้า ${type === 'Group' ? 'กลุ่ม' : 'ส่วนตัว'}`,
             subject: 'วิชาวิทยาการคำนวณ',
             description: 'นี่คือตัวอย่างการแสดงผลแบบ Flex Message บน LINE',
             dueDate: new Date(Date.now() + 86400000).toISOString(),
@@ -170,7 +181,7 @@ const TeacherDashboardPage: React.FC = () => {
         
         // Pass the object to generate Flex
         const flexMessage = generateTaskFlexMessage(dummyTask);
-        const result = await testLineNotification(lineToken, testUserId, flexMessage);
+        const result = await testLineNotification(lineToken, targetId, flexMessage);
         
         setSettingsMessage(result.message);
         setIsSendingTest(false);
@@ -684,28 +695,55 @@ const TeacherDashboardPage: React.FC = () => {
                                 <div className="pt-6 border-t border-slate-100">
                                     <h3 className="text-sm font-bold text-slate-700 mb-3">ทดสอบการแจ้งเตือน</h3>
                                     <div className="bg-slate-50 p-4 rounded-xl space-y-3">
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-500 mb-1">User ID สำหรับทดสอบ</label>
-                                            <input 
-                                                type="text" 
-                                                value={testUserId} 
-                                                onChange={(e) => setTestUserId(e.target.value)}
-                                                className="w-full p-2 text-sm border border-slate-200 rounded-lg font-mono"
-                                                placeholder="Uxxxxxxxx..."
-                                            />
+                                        <div className="flex gap-4">
+                                            <div className="flex-1">
+                                                <label className="block text-xs font-bold text-slate-500 mb-1">User ID (รายบุคคล)</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={testUserId} 
+                                                    onChange={(e) => setTestUserId(e.target.value)}
+                                                    className="w-full p-2 text-sm border border-slate-200 rounded-lg font-mono"
+                                                    placeholder="Uxxxxxxxx..."
+                                                />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="block text-xs font-bold text-slate-500 mb-1">Group ID (กลุ่ม)</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={testGroupId} 
+                                                    onChange={(e) => setTestGroupId(e.target.value)}
+                                                    className="w-full p-2 text-sm border border-slate-200 rounded-lg font-mono"
+                                                    placeholder="Cxxxxxxxx..."
+                                                />
+                                            </div>
                                         </div>
-                                        <button 
-                                            onClick={handleTestLine}
-                                            disabled={isSendingTest}
-                                            className="w-full bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300 transition text-sm flex justify-center items-center gap-2"
-                                        >
-                                            {isSendingTest ? 'กำลังส่ง...' : (
-                                                <>
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
-                                                    ส่ง Flex Message ทดสอบ
-                                                </>
-                                            )}
-                                        </button>
+                                        
+                                        <div className="flex gap-2">
+                                            <button 
+                                                onClick={() => handleTestLine(testUserId, 'User')}
+                                                disabled={isSendingTest}
+                                                className="flex-1 bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300 transition text-sm flex justify-center items-center gap-2"
+                                            >
+                                                {isSendingTest ? 'กำลังส่ง...' : (
+                                                    <>
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                                        ส่งหาบุคคล
+                                                    </>
+                                                )}
+                                            </button>
+                                            <button 
+                                                onClick={() => handleTestLine(testGroupId, 'Group')}
+                                                disabled={isSendingTest}
+                                                className="flex-1 bg-purple-100 text-purple-700 font-bold py-2 px-4 rounded-lg hover:bg-purple-200 transition text-sm flex justify-center items-center gap-2"
+                                            >
+                                                {isSendingTest ? 'กำลังส่ง...' : (
+                                                    <>
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                                                        ส่งเข้ากลุ่ม
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
                                         <p className="text-xs text-slate-400 text-center">
                                             (คลิกเพื่อดูตัวอย่าง Card ใน Console และ UI)
                                         </p>
@@ -729,13 +767,23 @@ const TeacherDashboardPage: React.FC = () => {
                                 </div>
                             </div>
                             
-                            <button 
-                                onClick={handleCheckDb}
-                                disabled={isCheckingDb}
-                                className="w-full bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-indigo-600 transition flex items-center justify-center gap-2"
-                            >
-                                {isCheckingDb ? 'กำลังตรวจสอบ...' : 'เริ่มการตรวจสอบระบบ'}
-                            </button>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={handleCheckDb}
+                                    disabled={isCheckingDb}
+                                    className="flex-1 bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-indigo-600 transition flex items-center justify-center gap-2"
+                                >
+                                    {isCheckingDb ? 'กำลังตรวจสอบ...' : '1. ตรวจสอบ'}
+                                </button>
+                                <a 
+                                    href="https://supabase.com/dashboard/project/fuiutzmkcwtuzjtbgfsg/sql/new" 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="flex-1 bg-slate-800 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-slate-700 transition flex items-center justify-center gap-2"
+                                >
+                                    2. แก้ไข (เปิด SQL Editor)
+                                </a>
+                            </div>
 
                             {dbHealth.length > 0 && (
                                 <div className="mt-4 space-y-2">
