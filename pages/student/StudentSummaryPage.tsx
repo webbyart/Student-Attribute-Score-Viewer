@@ -33,18 +33,24 @@ const StudentSummaryPage: React.FC = () => {
         <p className="text-sm text-slate-500">ภาพรวมคะแนนคุณลักษณะและงานทั้งหมด</p>
       </header>
 
-      {/* Score Highlights Badge Section */}
+      {/* Score Highlights Badge Section - Enhanced */}
       {attributeAverages.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {attributeAverages.map(attr => (
-                  <div key={attr.attribute_id} className="bg-white rounded-xl p-3 shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
-                      <div className={`text-xl font-bold mb-1 ${attr.average >= 80 ? 'text-green-500' : (attr.average >= 50 ? 'text-orange-500' : 'text-red-500')}`}>
-                          {attr.average}
-                          <span className="text-xs text-slate-400 font-normal ml-0.5">/100</span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {attributeAverages.map(attr => {
+                  let colorClass = 'text-red-500 bg-red-50 border-red-100';
+                  if (attr.average >= 80) colorClass = 'text-green-600 bg-green-50 border-green-100';
+                  else if (attr.average >= 50) colorClass = 'text-orange-500 bg-orange-50 border-orange-100';
+                  
+                  return (
+                      <div key={attr.attribute_id} className={`rounded-2xl p-4 shadow-sm border flex flex-col items-center justify-center text-center transition hover:scale-105 ${colorClass}`}>
+                          <div className="text-3xl font-bold mb-1">
+                              {attr.average}
+                              <span className="text-sm opacity-60 font-normal ml-0.5">%</span>
+                          </div>
+                          <span className="text-xs font-bold uppercase tracking-wide opacity-80 line-clamp-2">{attr.attribute_name}</span>
                       </div>
-                      <span className="text-xs font-medium text-slate-600 line-clamp-2">{attr.attribute_name}</span>
-                  </div>
-              ))}
+                  );
+              })}
           </div>
       )}
 

@@ -41,14 +41,10 @@ const StudentDashboardPage: React.FC = () => {
 
   const handleNotificationClick = async () => {
       setShowNotifications(!showNotifications);
-      // Mark read logic is usually per item, but we can do it on close or open if preferred
-      // For now, we keep manual mark or mark all? Let's leave as is but just toggle view.
   }
   
   const handleMarkAsRead = (nId: string) => {
       markNotificationRead(nId);
-      // Optimistic update handled by Supabase subscription in parent layout ideally, 
-      // but here we might need to force refresh or rely on parent state update.
   }
 
   const handleToggleTask = async (task: Task) => {
@@ -65,11 +61,12 @@ const StudentDashboardPage: React.FC = () => {
       if (navigator.share) {
           navigator.share({
               title: `Dashboard ของ ${student.student_name}`,
+              text: `ดูผลการเรียนและภาระงานของ ${student.student_name}`,
               url: window.location.href
           }).catch(console.error);
       } else {
           navigator.clipboard.writeText(window.location.href);
-          alert('คัดลอกลิงก์แล้ว!');
+          alert('คัดลอกลิงก์แล้ว! ส่งให้เพื่อนหรือผู้ปกครองได้เลย');
       }
   }
 
@@ -102,13 +99,14 @@ const StudentDashboardPage: React.FC = () => {
             <button 
                 onClick={handleShare}
                 className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition text-slate-500"
+                title="แชร์โปรไฟล์"
             >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
             </button>
 
             {/* Notification Bell */}
-            <div className="relative cursor-pointer" onClick={handleNotificationClick}>
-                <div className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition">
+            <div className="relative cursor-pointer">
+                <div onClick={handleNotificationClick} className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition">
                     <svg className={`w-6 h-6 ${unreadCount > 0 ? 'text-purple-600 animate-pulse' : 'text-slate-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                     </svg>
@@ -124,9 +122,9 @@ const StudentDashboardPage: React.FC = () => {
                         </div>
                         {/* Filter Bar */}
                         <div className="flex gap-2 p-2 overflow-x-auto border-b border-slate-50 no-scrollbar">
-                            <button onClick={() => setNotificationFilter('All')} className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap ${notificationFilter === 'All' ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500'}`}>ทั้งหมด</button>
+                            <button onClick={() => setNotificationFilter('All')} className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap transition ${notificationFilter === 'All' ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>ทั้งหมด</button>
                             {Object.values(TaskCategory).map(cat => (
-                                <button key={cat} onClick={() => setNotificationFilter(cat)} className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap ${notificationFilter === cat ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500'}`}>{TaskCategoryLabel[cat]}</button>
+                                <button key={cat} onClick={() => setNotificationFilter(cat)} className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap transition ${notificationFilter === cat ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{TaskCategoryLabel[cat]}</button>
                             ))}
                         </div>
 
@@ -153,16 +151,19 @@ const StudentDashboardPage: React.FC = () => {
       </div>
 
       {/* Progress Card */}
-      <Card className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-none shadow-lg shadow-indigo-200">
-          <div className="flex justify-between items-end mb-2">
-              <div>
-                  <h3 className="font-bold text-lg">ความคืบหน้าของฉัน</h3>
-                  <p className="text-xs text-indigo-100">งานที่เสร็จสิ้น {completedTasks} จาก {totalTasks} งาน</p>
-              </div>
-              <div className="text-3xl font-bold">{progressPercentage}%</div>
-          </div>
-          <div className="w-full bg-black/20 rounded-full h-2.5">
-              <div className="bg-white h-2.5 rounded-full transition-all duration-500" style={{ width: `${progressPercentage}%` }}></div>
+      <Card className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white border-none shadow-xl shadow-indigo-200/50 relative overflow-hidden">
+          <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+          <div className="relative z-10">
+            <div className="flex justify-between items-end mb-3">
+                <div>
+                    <h3 className="font-bold text-lg mb-1">ความคืบหน้าของฉัน</h3>
+                    <p className="text-xs text-indigo-100 opacity-90">งานที่เสร็จสิ้น {completedTasks} จาก {totalTasks} งาน</p>
+                </div>
+                <div className="text-4xl font-black tracking-tight">{progressPercentage}%</div>
+            </div>
+            <div className="w-full bg-black/20 rounded-full h-3 backdrop-blur-sm">
+                <div className="bg-white h-3 rounded-full transition-all duration-700 ease-out shadow-[0_0_10px_rgba(255,255,255,0.5)]" style={{ width: `${progressPercentage}%` }}></div>
+            </div>
           </div>
       </Card>
 
@@ -174,22 +175,22 @@ const StudentDashboardPage: React.FC = () => {
                 <button 
                     key={menu.category}
                     onClick={() => navigate(`categories`)} 
-                    className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm hover:shadow-md transition border border-slate-50 aspect-square"
+                    className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm hover:shadow-md transition border border-slate-50 aspect-square group active:scale-95"
                 >
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl mb-2 ${menu.color}`}>
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl mb-2 transition-transform group-hover:scale-110 ${menu.color}`}>
                         {menu.icon}
                     </div>
-                    <span className="text-xs font-medium text-slate-600 text-center leading-tight">{menu.label}</span>
+                    <span className="text-xs font-bold text-slate-600 text-center leading-tight">{menu.label}</span>
                 </button>
             ))}
              <button 
                 onClick={() => navigate(`schedule`)}
-                className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm hover:shadow-md transition border border-slate-50 aspect-square"
+                className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm hover:shadow-md transition border border-slate-50 aspect-square group active:scale-95"
             >
-                <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl mb-2 bg-slate-100 text-slate-600">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl mb-2 bg-slate-100 text-slate-600 transition-transform group-hover:scale-110">
                     🗓️
                 </div>
-                <span className="text-xs font-medium text-slate-600 text-center">ปฏิทินรวม</span>
+                <span className="text-xs font-bold text-slate-600 text-center">ปฏิทินรวม</span>
             </button>
         </div>
       </div>
@@ -197,39 +198,43 @@ const StudentDashboardPage: React.FC = () => {
       {/* Upcoming Tasks Feed */}
       <div>
         <div className="flex justify-between items-center mb-3">
-             <h2 className="text-lg font-bold text-slate-700">ภาระงานใกล้ถึงกำหนด (ที่ต้องทำ)</h2>
-             <span className="text-xs text-purple-600 cursor-pointer" onClick={() => navigate('schedule')}>ดูทั้งหมด</span>
+             <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
+                ⏳ งานที่ต้องทำ (เร็วๆ นี้)
+             </h2>
+             <span className="text-xs font-bold text-purple-600 cursor-pointer bg-purple-50 px-2 py-1 rounded-lg hover:bg-purple-100 transition" onClick={() => navigate('schedule')}>ดูทั้งหมด →</span>
         </div>
       
         {upcomingTasks.length > 0 ? (
             <div className="space-y-3">
                 {upcomingTasks.map(task => {
                     let priorityBadge = null;
-                    if(task.priority === 'High') priorityBadge = <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-bold">High</span>
+                    if(task.priority === 'High') priorityBadge = <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-bold border border-red-200">High</span>
                     
+                    const isUrgent = new Date(task.dueDate).getTime() - new Date().getTime() < 86400000;
+
                     return (
-                        <div key={task.id} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-l-purple-500 flex justify-between items-center">
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold">{TaskCategoryLabel[task.category]}</span>
+                        <div key={task.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center group hover:shadow-md transition-all">
+                            <div className="flex-1 min-w-0 mr-3">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold">{TaskCategoryLabel[task.category]}</span>
                                     {priorityBadge}
-                                    {new Date(task.dueDate).getTime() - new Date().getTime() < 86400000 && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-bold">ด่วน</span>
+                                    {isUrgent && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500 text-white font-bold animate-pulse">ด่วน</span>
                                     )}
                                 </div>
-                                <h3 className="font-bold text-slate-800 text-sm line-clamp-1">{task.title}</h3>
-                                <p className="text-xs text-slate-500">{task.subject}</p>
+                                <h3 className="font-bold text-slate-800 text-sm truncate">{task.title}</h3>
+                                <p className="text-xs text-slate-500 truncate">{task.subject}</p>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 shrink-0">
                                  <div className="text-right">
-                                     <p className="text-xs font-bold text-slate-700">{new Date(task.dueDate).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})}</p>
-                                     <p className="text-[10px] text-slate-400">{new Date(task.dueDate).toLocaleDateString('th-TH', {day: 'numeric', month:'short'})}</p>
+                                     <p className={`text-xs font-bold ${isUrgent ? 'text-red-600' : 'text-slate-700'}`}>{new Date(task.dueDate).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})}</p>
+                                     <p className="text-[10px] text-slate-400 font-medium">{new Date(task.dueDate).toLocaleDateString('th-TH', {day: 'numeric', month:'short'})}</p>
                                  </div>
                                  <button 
                                     onClick={() => handleToggleTask(task)}
-                                    className="w-8 h-8 rounded-full border-2 border-slate-300 flex items-center justify-center hover:bg-green-50 hover:border-green-400 transition"
+                                    className="w-10 h-10 rounded-full border-2 border-slate-200 flex items-center justify-center hover:bg-green-50 hover:border-green-500 hover:text-green-500 transition-all text-transparent"
                                  >
-                                     <div className="w-full h-full rounded-full bg-transparent"></div>
+                                     <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                                  </button>
                              </div>
                         </div>
@@ -237,8 +242,10 @@ const StudentDashboardPage: React.FC = () => {
                 })}
             </div>
         ) : (
-            <Card className="text-center py-8 text-slate-500 text-sm">
-                ไม่มีงานค้างที่ใกล้ถึงกำหนด! เยี่ยมมาก 🎉
+            <Card className="text-center py-10 flex flex-col items-center justify-center border-dashed border-2 border-slate-200 bg-slate-50/50">
+                <span className="text-4xl mb-3">🎉</span>
+                <p className="text-slate-500 text-sm font-medium">ไม่มีงานค้างที่ใกล้ถึงกำหนด!</p>
+                <p className="text-slate-400 text-xs">พักผ่อนให้สบาย หรือทบทวนบทเรียนล่วงหน้าได้เลย</p>
             </Card>
         )}
       </div>

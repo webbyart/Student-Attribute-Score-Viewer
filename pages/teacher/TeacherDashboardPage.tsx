@@ -14,9 +14,12 @@ import {
     generateTaskFlexMessage,
     checkDatabaseHealth,
     sendLineNotification,
-    bulkRegisterStudents
+    bulkRegisterStudents,
+    registerTeacher,
+    getTimetable,
+    generateTimetableFlexMessage
 } from '../../services/api';
-import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor } from '../../types';
+import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor, TimetableEntry } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
 import TrashIcon from '../../assets/icons/TrashIcon';
 import PencilIcon from '../../assets/icons/PencilIcon';
@@ -27,6 +30,7 @@ import StudentDetailModal from '../../components/ui/StudentDetailModal';
 import DayEventsModal from '../../components/ui/DayEventsModal';
 import TaskDetailModal from '../../components/ui/TaskDetailModal';
 import TimetableGrid from '../../components/ui/TimetableGrid';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 
 const TeacherDashboardPage: React.FC = () => {
     const { teacher } = useTeacherAuth();
@@ -47,12 +51,13 @@ const TeacherDashboardPage: React.FC = () => {
     const [userSearch, setUserSearch] = useState('');
     const csvInputRef = useRef<HTMLInputElement>(null);
     const [importStatus, setImportStatus] = useState<string>('');
+    const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
     
     // Settings State - Pre-filled with provided credentials
     const [lineToken, setLineToken] = useState('vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=');
     const [lineSecret, setLineSecret] = useState('b7cd5cc937837ad847aba3bf851576d9');
     const [testUserId, setTestUserId] = useState('Ua276c047d87982958a524c1f5ac30f08');
-    const [testGroupId, setTestGroupId] = useState(''); // Added Group ID State
+    const [testGroupId, setTestGroupId] = useState(''); 
     const [settingsMessage, setSettingsMessage] = useState('');
     const [isSendingTest, setIsSendingTest] = useState(false);
     
@@ -86,8 +91,20 @@ const TeacherDashboardPage: React.FC = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [message, setMessage] = useState('');
 
+    // Schedule State
+    const [scheduleGrade, setScheduleGrade] = useState('ม.4');
+    const [scheduleClassroom, setScheduleClassroom] = useState('1');
+    const [scheduleData, setScheduleData] = useState<TimetableEntry[]>([]);
+    const [scheduleLoading, setScheduleLoading] = useState(false);
+    const [isConfirmSendScheduleOpen, setIsConfirmSendScheduleOpen] = useState(false);
+    
+    // Confirm Delete Modal State
+    const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+    const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+
     useEffect(() => {
         loadTasks();
+        loadSettings(); // Load settings on mount to ensure Group ID is ready
 
         // Real-time Subscription for Tasks
         const taskChannel = supabase.channel('realtime-tasks')
@@ -99,9 +116,6 @@ const TeacherDashboardPage: React.FC = () => {
         // Real-time Subscription for Users (Profiles)
         const profileChannel = supabase.channel('realtime-profiles')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-            // Only reload users if we are currently viewing the users tab to save resources
-            // Note: We use a functional update or ref in a real complex app, but here simplistic approach works
-            // or we just set a flag. For simplicity, we'll reload if the tab is active or just reload always (safer).
             loadUsers(); 
         })
         .subscribe();
@@ -116,10 +130,10 @@ const TeacherDashboardPage: React.FC = () => {
         if (activeTab === 'users') {
             loadUsers();
         }
-        if (activeTab === 'settings') {
-            loadSettings();
+        if (activeTab === 'schedule') {
+            loadSchedule();
         }
-    }, [activeTab, userType]);
+    }, [activeTab, userType, scheduleGrade, scheduleClassroom]);
 
     const loadTasks = async () => {
         const fetchedTasks = await getAllTasks();
@@ -131,6 +145,13 @@ const TeacherDashboardPage: React.FC = () => {
         setUsers(fetchedUsers);
     }
 
+    const loadSchedule = async () => {
+        setScheduleLoading(true);
+        const data = await getTimetable(scheduleGrade, scheduleClassroom);
+        setScheduleData(data);
+        setScheduleLoading(false);
+    };
+
     const loadSettings = async () => {
         const settings = await getSystemSettings();
         if (settings['line_channel_access_token']) {
@@ -139,7 +160,6 @@ const TeacherDashboardPage: React.FC = () => {
         if (settings['line_channel_secret']) {
             setLineSecret(settings['line_channel_secret']);
         }
-        // Load stored test group ID if available (optional)
         if (settings['test_group_id']) {
             setTestGroupId(settings['test_group_id']);
         }
@@ -252,7 +272,6 @@ const TeacherDashboardPage: React.FC = () => {
         e.preventDefault();
         if (!teacher) return;
         
-        // Safety check: Ensure we have a valid session before submitting
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
             alert("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่");
@@ -303,7 +322,6 @@ const TeacherDashboardPage: React.FC = () => {
                     
                     // --- Auto Send LINE Notification ---
                     if (testGroupId) {
-                        // Construct the full Task object for the Flex Message generator
                         const fullTask: Task = {
                             id: result.data?.id || 'temp',
                             ...taskPayload,
@@ -312,9 +330,8 @@ const TeacherDashboardPage: React.FC = () => {
                             isCompleted: false
                         };
                         
-                        // Send notification in background
                         sendLineNotification(testGroupId, fullTask)
-                            .then(() => setMessage('บันทึกข้อมูลและส่งแจ้งเตือน LINE แล้ว'))
+                            .then(() => setMessage('บันทึกข้อมูลและส่งแจ้งเตือน LINE แล้ว ✅'))
                             .catch(err => console.error("Auto LINE notification failed:", err));
                     }
 
@@ -331,10 +348,17 @@ const TeacherDashboardPage: React.FC = () => {
     };
 
     const handleDeleteTask = async (id: string) => {
-        if (window.confirm('ยืนยันการลบภาระงานนี้?')) {
-            await deleteTask(id);
+        setTaskToDelete(id);
+        setIsConfirmDeleteOpen(true);
+    };
+
+    const confirmDeleteTask = async () => {
+        if (taskToDelete) {
+            await deleteTask(taskToDelete);
             loadTasks();
+            setTaskToDelete(null);
         }
+        setIsConfirmDeleteOpen(false);
     };
 
     const handleUpdateUser = async (e: React.FormEvent) => {
@@ -357,6 +381,27 @@ const TeacherDashboardPage: React.FC = () => {
             alert('เกิดข้อผิดพลาด: ' + result.message);
         }
     };
+
+    const handleAddTeacher = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+        const name = formData.get('name') as string;
+        const email = formData.get('email') as string;
+        const password = formData.get('password') as string;
+        const lineUserId = formData.get('lineUserId') as string;
+        
+        setIsSubmitting(true);
+        const result = await registerTeacher(name, email, password, lineUserId);
+        setIsSubmitting(false);
+        
+        if (result.success) {
+            alert('เพิ่มครู/บุคลากรสำเร็จ');
+            setIsAddUserModalOpen(false);
+            loadUsers();
+        } else {
+            alert('เกิดข้อผิดพลาด: ' + result.message);
+        }
+    }
     
     // --- Bulk Import ---
     const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -371,8 +416,6 @@ const TeacherDashboardPage: React.FC = () => {
             const lines = text.split('\n');
             const studentsToImport: any[] = [];
             
-            // Assume format: student_id, full_name, email, grade, classroom, password
-            // Skip header if it contains "student_id"
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i].trim();
                 if (!line) continue;
@@ -398,24 +441,37 @@ const TeacherDashboardPage: React.FC = () => {
             }
 
             setImportStatus(`กำลังนำเข้าข้อมูล ${studentsToImport.length} รายการ...`);
-            
             const result = await bulkRegisterStudents(studentsToImport);
             
             if (result.success) {
                 setImportStatus(`✅ นำเข้าสำเร็จ ${result.count} รายการ ${result.errors.length > 0 ? `(มีข้อผิดพลาด ${result.errors.length} รายการ - ดู Console)` : ''}`);
-                if (result.errors.length > 0) console.warn("Import Errors:", result.errors);
                 loadUsers();
             } else {
                 setImportStatus(`❌ เกิดข้อผิดพลาด: ${result.errors.join(', ')}`);
             }
-            
-            // Clear input
             if (csvInputRef.current) csvInputRef.current.value = '';
         };
-        
         reader.readAsText(file);
     };
 
+    const confirmSendSchedule = async () => {
+        setIsConfirmSendScheduleOpen(false);
+        
+        if (!testGroupId) {
+            alert('กรุณาตั้งค่า Group ID ในเมนูตั้งค่าก่อน หรือตรวจสอบว่าได้บันทึกการตั้งค่าแล้ว');
+            return;
+        }
+
+        // Generate the Table-like Flex Message
+        const scheduleFlexMessage = generateTimetableFlexMessage(scheduleGrade, scheduleClassroom, scheduleData);
+        
+        setIsSendingTest(true);
+        const result = await testLineNotification(lineToken, testGroupId, scheduleFlexMessage);
+        setIsSendingTest(false);
+        
+        if(result.success) alert(`ส่งตารางเรียนชั้น ${scheduleGrade}/${scheduleClassroom} เรียบร้อยแล้ว`);
+        else alert('เกิดข้อผิดพลาด: ' + result.message);
+    };
 
     const handleDateClick = (date: Date, dayTasks: Task[]) => {
         setSelectedDate(date);
@@ -480,7 +536,26 @@ const TeacherDashboardPage: React.FC = () => {
                 {activeTab === 'schedule' && (
                     <div className="animate-fade-in space-y-4">
                          {/* Dedicated Timetable Grid */}
-                         <TimetableGrid />
+                         <TimetableGrid 
+                            grade={scheduleGrade}
+                            classroom={scheduleClassroom}
+                            onGradeChange={setScheduleGrade}
+                            onClassroomChange={setScheduleClassroom}
+                            scheduleData={scheduleData}
+                            loading={scheduleLoading}
+                         />
+                         
+                        {/* Send Schedule Button */}
+                        <div className="flex justify-end">
+                            <button 
+                                onClick={() => setIsConfirmSendScheduleOpen(true)}
+                                disabled={isSendingTest || scheduleLoading}
+                                className="bg-green-600 text-white font-bold py-2 px-4 rounded-xl shadow-md hover:bg-green-700 transition flex items-center gap-2 text-sm disabled:opacity-50"
+                            >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                                {isSendingTest ? 'กำลังส่ง...' : 'ส่งตารางเรียนเข้าไลน์'}
+                            </button>
+                        </div>
 
                         <div className="mt-8 pt-4 border-t border-slate-200">
                             <div className="flex justify-between items-center mb-4">
@@ -497,7 +572,6 @@ const TeacherDashboardPage: React.FC = () => {
                                 </button>
                             </div>
                             
-                            {/* Existing One-off Class Schedule List */}
                              {classScheduleTasks.length > 0 ? (
                                 <div className="grid grid-cols-1 gap-3">
                                     {classScheduleTasks.map(task => (
@@ -750,6 +824,15 @@ const TeacherDashboardPage: React.FC = () => {
                             </div>
                         )}
 
+                        {userType === 'teacher' && (
+                             <div className="flex justify-end mb-4">
+                                <button onClick={() => setIsAddUserModalOpen(true)} className="bg-purple-600 text-white text-xs font-bold px-4 py-2 rounded-xl shadow hover:bg-purple-700 flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    เพิ่มครู/บุคลากร
+                                </button>
+                             </div>
+                        )}
+
                         <div className="relative mb-4">
                             <input type="text" placeholder="ค้นหาชื่อ, รหัสนักเรียน..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-400 focus:outline-none bg-white shadow-sm"/>
                             <svg className="w-5 h-5 text-slate-400 absolute left-3 top-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -762,7 +845,7 @@ const TeacherDashboardPage: React.FC = () => {
                                 <tbody className="divide-y divide-slate-50">
                                     {filteredUsers.map(user => (
                                         <tr key={user.id} className="hover:bg-purple-50/30 transition">
-                                            <td className="p-4"><div className="font-bold text-slate-800">{user.full_name}</div><div className="text-xs text-slate-400 font-mono mt-0.5">{user.login_code ? `Code: ${user.login_code}` : 'No Code'}</div></td>
+                                            <td className="p-4"><div className="font-bold text-slate-800">{user.full_name}</div><div className="text-xs text-slate-400 font-mono mt-0.5">{user.login_code ? `Code: ${user.login_code}` : (userType === 'teacher' ? user.email : 'No Code')}</div></td>
                                             {userType === 'student' && <td className="p-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold mr-1">{user.student_id}</span><span className="text-xs text-slate-500">{user.grade}/{user.classroom}</span></td>}
                                             <td className="p-4 text-right"><div className="flex justify-end gap-2">{userType === 'student' && <button onClick={() => setViewingStudentId(user.student_id)} className="text-xs font-bold text-white bg-indigo-500 px-3 py-1.5 rounded-lg hover:bg-indigo-600 transition shadow-sm">ดูข้อมูล</button>}<button onClick={() => setEditingUser(user)} className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg hover:bg-purple-100 transition border border-purple-100">แก้ไข</button></div></td>
                                         </tr>
@@ -812,6 +895,20 @@ const TeacherDashboardPage: React.FC = () => {
                                         placeholder="วาง Channel Secret ของคุณที่นี่..."
                                     />
                                 </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">LINE Group ID (สำหรับการแจ้งเตือนอัตโนมัติ)</label>
+                                    <input 
+                                        type="text"
+                                        value={testGroupId}
+                                        onChange={(e) => setTestGroupId(e.target.value)}
+                                        className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-green-200 focus:border-green-400 focus:outline-none transition"
+                                        placeholder="Cxxxxxxxx..."
+                                    />
+                                    <p className="text-xs text-slate-400 mt-2">
+                                        * หากระบุ ID นี้ ระบบจะส่งแจ้งเตือนเข้ากลุ่มอัตโนมัติเมื่อโพสต์งานใหม่
+                                    </p>
+                                </div>
 
                                 <button 
                                     onClick={handleSaveSettings}
@@ -834,16 +931,6 @@ const TeacherDashboardPage: React.FC = () => {
                                                     placeholder="Uxxxxxxxx..."
                                                 />
                                             </div>
-                                            <div className="flex-1">
-                                                <label className="block text-xs font-bold text-slate-500 mb-1">Group ID (กลุ่ม)</label>
-                                                <input 
-                                                    type="text" 
-                                                    value={testGroupId} 
-                                                    onChange={(e) => setTestGroupId(e.target.value)}
-                                                    className="w-full p-2 text-sm border border-slate-200 rounded-lg font-mono"
-                                                    placeholder="Cxxxxxxxx..."
-                                                />
-                                            </div>
                                         </div>
                                         
                                         <div className="flex gap-2">
@@ -859,22 +946,7 @@ const TeacherDashboardPage: React.FC = () => {
                                                     </>
                                                 )}
                                             </button>
-                                            <button 
-                                                onClick={() => handleTestLine(testGroupId, 'Group')}
-                                                disabled={isSendingTest}
-                                                className="flex-1 bg-purple-100 text-purple-700 font-bold py-2 px-4 rounded-lg hover:bg-purple-200 transition text-sm flex justify-center items-center gap-2"
-                                            >
-                                                {isSendingTest ? 'กำลังส่ง...' : (
-                                                    <>
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                                                        ส่งเข้ากลุ่ม
-                                                    </>
-                                                )}
-                                            </button>
                                         </div>
-                                        <p className="text-xs text-slate-400 text-center">
-                                            (คลิกเพื่อดูตัวอย่าง Card ใน Console และ UI)
-                                        </p>
                                     </div>
                                 </div>
 
@@ -984,6 +1056,22 @@ const TeacherDashboardPage: React.FC = () => {
                 </button>
             </div>
 
+            <ConfirmModal 
+                isOpen={isConfirmSendScheduleOpen}
+                title="ยืนยันการส่งตารางเรียน"
+                message={`คุณต้องการส่งตารางเรียนของชั้น ${scheduleGrade}/${scheduleClassroom} ไปยังกลุ่มไลน์ใช่หรือไม่?`}
+                onConfirm={confirmSendSchedule}
+                onCancel={() => setIsConfirmSendScheduleOpen(false)}
+            />
+
+            <ConfirmModal 
+                isOpen={isConfirmDeleteOpen}
+                title="ยืนยันการลบ"
+                message="คุณแน่ใจหรือไม่ว่าต้องการลบภาระงานนี้? การกระทำนี้ไม่สามารถย้อนกลับได้"
+                onConfirm={confirmDeleteTask}
+                onCancel={() => setIsConfirmDeleteOpen(false)}
+            />
+
             {isDayModalOpen && selectedDate && (
                 <DayEventsModal date={selectedDate} tasks={selectedDayTasks} onClose={() => setIsDayModalOpen(false)} onTaskClick={handleTaskClickFromModal} />
             )}
@@ -999,14 +1087,36 @@ const TeacherDashboardPage: React.FC = () => {
                             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Login Code</label><input value={editingUser.login_code || ''} onChange={e => setEditingUser({...editingUser, login_code: e.target.value})} placeholder="1234" className="w-full p-2.5 border border-yellow-200 bg-yellow-50 rounded-xl font-mono text-center tracking-widest text-lg font-bold text-yellow-700" /></div>
                             {editingUser.role === 'student' && (<>
                                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Student ID</label><input value={editingUser.student_id || ''} onChange={e => setEditingUser({...editingUser, student_id: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50" required /></div>
-                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">LINE User ID</label><input value={editingUser.line_user_id || ''} onChange={e => setEditingUser({...editingUser, line_user_id: e.target.value})} className="w-full p-2.5 border border-green-200 rounded-xl bg-green-50 text-green-700 font-mono text-xs" placeholder="Uxxxxxxxx..." /></div>
                                 <div className="flex gap-3"><div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">ชั้น</label><input value={editingUser.grade || ''} onChange={e => setEditingUser({...editingUser, grade: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl" /></div><div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">ห้อง</label><input value={editingUser.classroom || ''} onChange={e => setEditingUser({...editingUser, classroom: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl" /></div></div>
                             </>)}
+                            {editingUser.role === 'teacher' && (
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">LINE User ID</label><input value={editingUser.line_user_id || ''} onChange={e => setEditingUser({...editingUser, line_user_id: e.target.value})} className="w-full p-2.5 border border-green-200 rounded-xl bg-green-50 text-green-700 font-mono text-xs" placeholder="Uxxxxxxxx..." /></div>
+                            )}
                             <div className="flex gap-3 pt-4"><button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-3 text-slate-600 bg-slate-100 rounded-xl font-bold hover:bg-slate-200 transition">ยกเลิก</button><button type="submit" className="flex-1 py-3 text-white bg-purple-600 rounded-xl font-bold shadow-lg shadow-purple-200 hover:bg-purple-700 transition">บันทึก</button></div>
                         </form>
                     </div>
                 </div>
             )}
+            
+            {/* Add User Modal */}
+            {isAddUserModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
+                         <div className="p-4 bg-purple-600 text-white flex justify-between items-center"><h3 className="font-bold text-lg">➕ เพิ่มครู/บุคลากร</h3><button onClick={() => setIsAddUserModalOpen(false)} className="p-1 hover:bg-white/20 rounded-full transition">✕</button></div>
+                         <form onSubmit={handleAddTeacher} className="p-6 space-y-3">
+                             <div><label className="block text-xs font-bold text-slate-500 mb-1">ชื่อ-นามสกุล</label><input name="name" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                             <div><label className="block text-xs font-bold text-slate-500 mb-1">อีเมล</label><input name="email" type="email" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                             <div><label className="block text-xs font-bold text-slate-500 mb-1">รหัสผ่าน</label><input name="password" type="password" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                             <div><label className="block text-xs font-bold text-slate-500 mb-1">LINE User ID (Optional)</label><input name="lineUserId" placeholder="Uxxxx..." className="w-full p-2.5 border border-green-200 bg-green-50 rounded-xl font-mono text-green-700" /></div>
+                             
+                             <button type="submit" disabled={isSubmitting} className="w-full mt-4 bg-purple-600 text-white font-bold py-3 rounded-xl hover:bg-purple-700 transition">
+                                 {isSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}
+                             </button>
+                         </form>
+                    </div>
+                </div>
+            )}
+
             {viewingStudentId && <StudentDetailModal studentId={viewingStudentId} onClose={() => setViewingStudentId(null)} />}
         </div>
     );

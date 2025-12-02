@@ -300,217 +300,336 @@ export const saveSystemSettings = async (settings: Record<string, string>): Prom
 
 // --- LINE Integration ---
 
+// Helper to generate a beautiful Flex Message from a Timetable
+export const generateTimetableFlexMessage = (grade: string, classroom: string, timetable: TimetableEntry[]) => {
+    // Group by Day
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const dayMap: Record<string, string> = { 'Monday': 'จันทร์', 'Tuesday': 'อังคาร', 'Wednesday': 'พุธ', 'Thursday': 'พฤหัส', 'Friday': 'ศุกร์' };
+    const dayColors: Record<string, string> = { 'Monday': '#FACC15', 'Tuesday': '#F472B6', 'Wednesday': '#4ADE80', 'Thursday': '#FB923C', 'Friday': '#60A5FA' };
+
+    const grouped: Record<string, TimetableEntry[]> = {};
+    days.forEach(d => grouped[d] = []);
+    
+    timetable.forEach(t => {
+        if (grouped[t.day_of_week]) {
+            grouped[t.day_of_week].push(t);
+        }
+    });
+
+    const dayContents = days.map(day => {
+        const entries = grouped[day].sort((a, b) => a.period_index - b.period_index);
+        if (entries.length === 0) return null;
+
+        const subjectRows = entries.map(e => ({
+            type: "box",
+            layout: "horizontal",
+            contents: [
+                { type: "text", text: e.period_time, size: "xs", color: "#6B7280", flex: 3 },
+                { type: "text", text: e.subject || "-", size: "xs", color: "#1F2937", flex: 5, weight: "bold", wrap: true },
+                { type: "text", text: e.room || '-', size: "xs", color: "#6B7280", flex: 2, align: "end" }
+            ],
+            margin: "sm"
+        }));
+
+        return {
+            type: "box",
+            layout: "vertical",
+            margin: "lg",
+            contents: [
+                {
+                    type: "box",
+                    layout: "horizontal",
+                    contents: [
+                        { type: "box", layout: "vertical", width: "4px", height: "16px", backgroundColor: dayColors[day] || '#CCCCCC', cornerRadius: "2px" },
+                        { 
+                            type: "text", 
+                            text: dayMap[day] || day, 
+                            weight: "bold", 
+                            size: "sm", 
+                            color: "#374151",
+                            margin: "md",
+                            flex: 1
+                        }
+                    ],
+                    alignItems: "center"
+                },
+                {
+                    type: "box",
+                    layout: "vertical",
+                    contents: subjectRows,
+                    paddingStart: "lg",
+                    paddingTop: "sm"
+                }
+            ]
+        };
+    }).filter(Boolean);
+
+    return {
+        type: 'flex',
+        altText: `ตารางเรียนชั้น ${grade}/${classroom}`,
+        contents: {
+            type: "bubble",
+            size: "mega",
+            header: {
+                type: "box",
+                layout: "vertical",
+                backgroundColor: "#4F46E5",
+                contents: [
+                    { type: "text", text: "📅 ตารางเรียน", color: "#FFFFFF", weight: "bold", size: "sm", opacity: "0.8" },
+                    { type: "text", text: `ระดับชั้น ${grade}/${classroom}`, color: "#FFFFFF", weight: "bold", size: "xl", margin: "sm" }
+                ],
+                paddingAll: "20px"
+            },
+            body: {
+                type: "box",
+                layout: "vertical",
+                contents: dayContents.length > 0 ? dayContents : [
+                    { type: "text", text: "ไม่มีข้อมูลตารางเรียน", align: "center", color: "#9CA3AF", margin: "md" }
+                ]
+            },
+            footer: {
+                type: "box",
+                layout: "vertical",
+                contents: [
+                    { type: "separator", color: "#F3F4F6" },
+                    { 
+                        type: "button", 
+                        action: { type: "uri", label: "ดูตารางเรียนเต็ม", uri: "https://liff.line.me/2006857640-r8q7w165" },
+                        style: "link",
+                        color: "#4F46E5",
+                        height: "sm"
+                    }
+                ],
+                paddingAll: "0px"
+            }
+        }
+    };
+}
+
 // Helper to generate a beautiful Flex Message from a Task
 export const generateTaskFlexMessage = (task: Task) => {
-    // Config based on category
-    let headerColor = '#6B7280'; // Default Slate
-    let headerText = 'ภาระงานทั่วไป';
-    let heroImage = 'https://cdn-icons-png.flaticon.com/512/2666/2666505.png'; // Default
-
+    // 1. Define Colors and Header Text based on Category
+    let themeColor = '#1DB446'; // Default LINE Green
+    let categoryText = 'ข่าวสารทั่วไป';
+    
     switch(task.category) {
         case TaskCategory.HOMEWORK: 
-            headerColor = '#F59E0B'; // Orange
-            headerText = '📝 การบ้านใหม่'; 
-            heroImage = 'https://cdn-icons-png.flaticon.com/512/3079/3079165.png'; 
+            themeColor = '#F59E0B'; // Amber/Orange
+            categoryText = '📝 การบ้าน/ภาระงาน'; 
             break;
         case TaskCategory.EXAM_SCHEDULE: 
-            headerColor = '#EF4444'; // Red
-            headerText = '🚨 แจ้งกำหนดการสอบ'; 
-            heroImage = 'https://cdn-icons-png.flaticon.com/512/3238/3238016.png';
+            themeColor = '#EF4444'; // Red
+            categoryText = '🚨 แจ้งกำหนดการสอบ'; 
             break;
         case TaskCategory.CLASS_SCHEDULE: 
-            headerColor = '#3B82F6'; // Blue
-            headerText = '📅 ตารางเรียน/นัดหมาย'; 
-            heroImage = 'https://cdn-icons-png.flaticon.com/512/2602/2602414.png';
+            themeColor = '#3B82F6'; // Blue
+            categoryText = '📅 ตารางเรียน/นัดหมาย'; 
             break;
         case TaskCategory.ACTIVITY_INSIDE: 
-            headerColor = '#10B981'; // Green
-            headerText = '🏫 กิจกรรมภายใน'; 
-            heroImage = 'https://cdn-icons-png.flaticon.com/512/2942/2942953.png';
+            themeColor = '#10B981'; // Emerald
+            categoryText = '🏫 กิจกรรมภายใน'; 
             break;
         case TaskCategory.ACTIVITY_OUTSIDE: 
-            headerColor = '#8B5CF6'; // Purple
-            headerText = '🚌 กิจกรรมภายนอก'; 
-            heroImage = 'https://cdn-icons-png.flaticon.com/512/3062/3062634.png';
+            themeColor = '#8B5CF6'; // Purple
+            categoryText = '🚌 กิจกรรมภายนอก'; 
             break;
     }
 
-    const priorityBadge = task.priority === 'High' ? '🔥 ด่วนที่สุด' : (task.priority === 'Medium' ? '⭐ สำคัญ' : 'ℹ️ ทั่วไป');
-    
-    // Formatting Dates
-    const createdDate = new Date(task.createdAt || new Date()).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
-    const dueDateObj = new Date(task.dueDate);
-    const dueDateStr = dueDateObj.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
-    const dueTimeStr = dueDateObj.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+    // 2. Format Dates (Thai Date Format)
+    const formatDate = (dateString: string) => {
+        if (!dateString) return '-';
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '-';
+        return date.toLocaleDateString('th-TH', { 
+            day: 'numeric', month: 'short', year: 'numeric' 
+        });
+    };
+    const formatTime = (dateString: string) => {
+        if (!dateString) return '-'; // FIX: Return hyphen instead of empty string
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '-';
+        return date.toLocaleTimeString('th-TH', { 
+            hour: '2-digit', minute: '2-digit' 
+        }) + ' น.';
+    };
 
-    // Formatting Target
+    const createdDate = formatDate(task.createdAt || new Date().toISOString());
+    const dueDate = formatDate(task.dueDate);
+    const dueTime = formatTime(task.dueDate);
+
+    // 3. Define Target Audience Text
     let targetText = "ทุกคน";
     if (task.targetStudentId) targetText = `เฉพาะบุคคล (${task.targetStudentId})`;
     else if (task.targetGrade && task.targetClassroom) targetText = `ชั้น ${task.targetGrade}/${task.targetClassroom}`;
     else if (task.targetGrade) targetText = `ระดับชั้น ${task.targetGrade}`;
 
-    // Formatting Attachments
-    const attachmentText = task.attachments && task.attachments.length > 0 
-        ? `📎 แนบไฟล์ ${task.attachments.length} รายการ` 
-        : "ไม่มีเอกสารแนบ";
+    // 4. Attachments Display Logic
+    const hasAttachments = task.attachments && task.attachments.length > 0;
+    const attachmentContents = hasAttachments ? [
+        {
+            type: "separator",
+            margin: "md",
+            color: "#E5E7EB"
+        },
+        {
+            type: "text",
+            text: "เอกสารแนบ:",
+            size: "xs",
+            color: "#9CA3AF",
+            margin: "md"
+        },
+        ...task.attachments.slice(0, 3).map(url => ({
+            type: "text",
+            text: `📎 ${url.split('/').pop()?.split('?')[0] || 'Download'}`,
+            size: "xxs",
+            color: "#3B82F6",
+            wrap: true,
+            action: { type: "uri", uri: url },
+            margin: "sm"
+        }))
+    ] : [];
 
-    // LINE Flex Message JSON Structure
+    // 5. Build Flex Message Structure
     return {
         type: 'flex',
-        altText: `แจ้งเตือน: ${task.title}`,
+        altText: `แจ้งเตือน: ${task.title || 'งานใหม่'}`,
         contents: {
-            type: 'bubble',
-            size: 'mega',
+            type: "bubble",
+            size: "mega", // FIX: Use 'mega' instead of 'giga' to avoid validation errors on some clients
             header: {
-                type: 'box',
-                layout: 'vertical',
+                type: "box",
+                layout: "vertical",
+                backgroundColor: themeColor,
+                paddingAll: "20px",
                 contents: [
                     {
-                        type: 'box',
-                        layout: 'horizontal',
-                        contents: [
-                             {
-                                type: 'image',
-                                url: heroImage,
-                                flex: 0,
-                                size: 'xs',
-                                aspectRatio: '1:1',
-                                gravity: 'center'
-                             },
-                             {
-                                type: 'text',
-                                text: headerText,
-                                color: '#FFFFFF',
-                                weight: 'bold',
-                                size: 'md',
-                                gravity: 'center',
-                                margin: 'md',
-                                flex: 1
-                            }
-                        ]
-                    }
-                ],
-                backgroundColor: headerColor,
-                paddingAll: '16px'
-            },
-            body: {
-                type: 'box',
-                layout: 'vertical',
-                contents: [
+                        type: "text",
+                        text: categoryText,
+                        color: "#FFFFFF",
+                        weight: "bold",
+                        size: "xs",
+                        textDecoration: "none",
+                        align: "start"
+                    },
                     {
-                        type: 'text',
-                        text: task.title,
-                        weight: 'bold',
-                        size: 'xl',
+                        type: "text",
+                        text: task.title || "ไม่มีหัวข้อ",
+                        weight: "bold",
+                        size: "xl",
+                        color: "#FFFFFF",
                         wrap: true,
-                        color: '#1F2937'
-                    },
-                    {
-                        type: 'text',
-                        text: task.subject,
-                        size: 'sm',
-                        color: '#6B7280',
-                        weight: 'bold',
-                        margin: 'xs'
-                    },
-                    {
-                         type: 'text',
-                         text: priorityBadge,
-                         size: 'xs',
-                         color: task.priority === 'High' ? '#EF4444' : '#F59E0B',
-                         weight: 'bold',
-                         margin: 'sm'
-                    },
-                    {
-                        type: 'separator',
-                        margin: 'lg',
-                        color: '#E5E7EB'
-                    },
-                    {
-                        type: 'box',
-                        layout: 'vertical',
-                        margin: 'lg',
-                        spacing: 'sm',
-                        contents: [
-                             {
-                                type: 'box',
-                                layout: 'baseline',
-                                contents: [
-                                    { type: 'text', text: '📅 วันที่สั่ง', color: '#9CA3AF', size: 'xs', flex: 2 },
-                                    { type: 'text', text: createdDate, color: '#4B5563', size: 'xs', flex: 4, wrap: true }
-                                ]
-                            },
-                            {
-                                type: 'box',
-                                layout: 'baseline',
-                                contents: [
-                                    { type: 'text', text: '⏰ กำหนดส่ง', color: '#9CA3AF', size: 'xs', flex: 2 },
-                                    { type: 'text', text: `${dueDateStr} (${dueTimeStr})`, color: '#DC2626', size: 'xs', flex: 4, weight: 'bold', wrap: true }
-                                ]
-                            },
-                             {
-                                type: 'box',
-                                layout: 'baseline',
-                                contents: [
-                                    { type: 'text', text: '👨‍🏫 ผู้สั่ง', color: '#9CA3AF', size: 'xs', flex: 2 },
-                                    { type: 'text', text: task.createdBy || 'คุณครู', color: '#4B5563', size: 'xs', flex: 4, wrap: true }
-                                ]
-                            },
-                             {
-                                type: 'box',
-                                layout: 'baseline',
-                                contents: [
-                                    { type: 'text', text: '🎯 เป้าหมาย', color: '#9CA3AF', size: 'xs', flex: 2 },
-                                    { type: 'text', text: targetText, color: '#4B5563', size: 'xs', flex: 4, wrap: true }
-                                ]
-                            },
-                             {
-                                type: 'box',
-                                layout: 'baseline',
-                                contents: [
-                                    { type: 'text', text: '📂 ไฟล์แนบ', color: '#9CA3AF', size: 'xs', flex: 2 },
-                                    { type: 'text', text: attachmentText, color: '#6366F1', size: 'xs', flex: 4, wrap: true }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        type: 'box',
-                        layout: 'vertical',
-                        margin: 'lg',
-                        backgroundColor: '#F3F4F6',
-                        cornerRadius: 'md',
-                        paddingAll: '12px',
-                        contents: [
-                             {
-                                type: 'text',
-                                text: task.description || 'ไม่มีรายละเอียดเพิ่มเติม',
-                                wrap: true,
-                                color: '#4B5563',
-                                size: 'xs',
-                                maxLines: 4
-                              }
-                        ]
+                        margin: "sm"
                     }
                 ]
             },
+            body: {
+                type: "box",
+                layout: "vertical",
+                contents: [
+                    // Subject & Teacher Row
+                    {
+                        type: "box",
+                        layout: "horizontal",
+                        contents: [
+                            {
+                                type: "box",
+                                layout: "vertical",
+                                contents: [
+                                    { type: "text", text: "รายวิชา", size: "xxs", color: "#9CA3AF" },
+                                    { type: "text", text: task.subject || "-", size: "sm", color: "#1F2937", weight: "bold", wrap: true }
+                                ],
+                                flex: 1
+                            },
+                            {
+                                type: "box",
+                                layout: "vertical",
+                                contents: [
+                                    { type: "text", text: "ผู้แจ้ง", size: "xxs", color: "#9CA3AF" },
+                                    { type: "text", text: task.createdBy || "Admin", size: "sm", color: "#1F2937", wrap: true }
+                                ],
+                                flex: 1
+                            }
+                        ],
+                        margin: "md"
+                    },
+                    { type: "separator", margin: "lg", color: "#F3F4F6" },
+                    // Date Row
+                    {
+                        type: "box",
+                        layout: "horizontal",
+                        margin: "lg",
+                        contents: [
+                            {
+                                type: "box",
+                                layout: "vertical",
+                                contents: [
+                                    { type: "text", text: "วันที่สร้าง", size: "xxs", color: "#9CA3AF" },
+                                    { type: "text", text: createdDate, size: "sm", color: "#4B5563" }
+                                ],
+                                flex: 1
+                            },
+                            {
+                                type: "box",
+                                layout: "vertical",
+                                contents: [
+                                    { type: "text", text: "กำหนดส่ง", size: "xxs", color: "#EF4444" },
+                                    { type: "text", text: `${dueDate}`, size: "sm", color: "#EF4444", weight: "bold" },
+                                    { type: "text", text: dueTime, size: "xs", color: "#EF4444" }
+                                ],
+                                flex: 1
+                            }
+                        ]
+                    },
+                    { type: "separator", margin: "lg", color: "#F3F4F6" },
+                    // Target & Description
+                    {
+                        type: "box",
+                        layout: "vertical",
+                        margin: "lg",
+                        contents: [
+                            {
+                                type: "text",
+                                text: `สำหรับ: ${targetText}`,
+                                size: "xs",
+                                color: "#6B7280",
+                                weight: "bold",
+                                margin: "sm"
+                            },
+                            {
+                                type: "text",
+                                text: task.description || "-",
+                                size: "sm",
+                                color: "#374151",
+                                wrap: true,
+                                margin: "md"
+                            }
+                        ]
+                    },
+                    // Attachments Section
+                    ...attachmentContents
+                ]
+            },
             footer: {
-                type: 'box',
-                layout: 'vertical',
+                type: "box",
+                layout: "vertical",
                 contents: [
                     {
-                        type: 'button',
-                        style: 'primary',
-                        height: 'sm',
-                        color: headerColor,
+                        type: "button",
+                        style: "primary",
+                        color: themeColor,
                         action: {
-                            type: 'uri',
-                            label: 'ดูรายละเอียดงาน',
-                            uri: 'https://liff.line.me/YOUR_LIFF_ID' // Replace with actual LIFF or Web URL
+                            type: "uri",
+                            label: "ดูรายละเอียด",
+                            uri: "https://liff.line.me/2006857640-r8q7w165" 
                         }
                     }
                 ],
-                paddingAll: '16px'
+                paddingAll: "20px"
+            },
+            styles: {
+                footer: {
+                    separator: true
+                }
             }
         }
     };
@@ -881,7 +1000,7 @@ export const createBackup = async (userId: string): Promise<boolean> => {
 
 // --- Teacher Auth & Data ---
 
-export const registerTeacher = async (name: string, email: string, password: string): Promise<{ success: boolean; message: string; }> => {
+export const registerTeacher = async (name: string, email: string, password: string, lineUserId?: string): Promise<{ success: boolean; message: string; }> => {
     try {
         const { data: authData, error: authError } = await supabase.auth.signUp({ 
             email, 
@@ -908,6 +1027,7 @@ export const registerTeacher = async (name: string, email: string, password: str
                 email: email,
                 full_name: name,
                 role: 'teacher',
+                line_user_id: lineUserId || null,
                 avatar_url: `https://ui-avatars.com/api/?name=${name}&background=random`
             });
             if (profileError) console.error("Profile creation warning:", profileError);

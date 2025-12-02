@@ -1,7 +1,6 @@
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { TimetableEntry } from '../../types';
-import { getTimetable } from '../../services/api';
 import LoadingSpinner from './LoadingSpinner';
 
 const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -20,29 +19,22 @@ const dayColors: Record<string, string> = {
     'Friday': 'bg-blue-400 text-blue-900'
 };
 
-const TimetableGrid: React.FC = () => {
-    const [grade, setGrade] = useState('ม.4');
-    const [classroom, setClassroom] = useState('1');
-    const [schedule, setSchedule] = useState<TimetableEntry[]>([]);
-    const [loading, setLoading] = useState(false);
+interface TimetableGridProps {
+    grade: string;
+    classroom: string;
+    onGradeChange: (val: string) => void;
+    onClassroomChange: (val: string) => void;
+    scheduleData: TimetableEntry[];
+    loading: boolean;
+}
 
-    useEffect(() => {
-        fetchSchedule();
-    }, [grade, classroom]);
-
-    const fetchSchedule = async () => {
-        setLoading(true);
-        const data = await getTimetable(grade, classroom);
-        setSchedule(data);
-        setLoading(false);
-    };
-
+const TimetableGrid: React.FC<TimetableGridProps> = ({ grade, classroom, onGradeChange, onClassroomChange, scheduleData, loading }) => {
+    
     // Get unique periods for column headers
-    const periods = Array.from(new Set(schedule.map(s => s.period_time))).sort();
+    const periods = Array.from(new Set(scheduleData.map(s => s.period_time))).sort();
     
     // Sort logic to ensure correct column order based on period_index if available, else time string
-    // Assuming backend returns sorted by index, but let's be safe:
-    const sortedPeriods = schedule
+    const sortedPeriods = scheduleData
         .reduce((acc: {time: string, index: number}[], curr) => {
             if (!acc.find(p => p.time === curr.period_time)) {
                 acc.push({ time: curr.period_time, index: curr.period_index });
@@ -54,7 +46,7 @@ const TimetableGrid: React.FC = () => {
 
 
     const getEntry = (day: string, time: string) => {
-        return schedule.find(s => s.day_of_week === day && s.period_time === time);
+        return scheduleData.find(s => s.day_of_week === day && s.period_time === time);
     };
 
     return (
@@ -68,7 +60,7 @@ const TimetableGrid: React.FC = () => {
                 <div className="flex gap-2">
                     <select 
                         value={grade} 
-                        onChange={(e) => setGrade(e.target.value)}
+                        onChange={(e) => onGradeChange(e.target.value)}
                         className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-200"
                     >
                         <option value="ม.4">ม.4</option>
@@ -77,7 +69,7 @@ const TimetableGrid: React.FC = () => {
                     </select>
                     <select 
                         value={classroom} 
-                        onChange={(e) => setClassroom(e.target.value)}
+                        onChange={(e) => onClassroomChange(e.target.value)}
                         className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-200"
                     >
                         <option value="1">ห้อง 1</option>
@@ -91,7 +83,7 @@ const TimetableGrid: React.FC = () => {
             <div className="overflow-x-auto p-4">
                 {loading ? (
                     <div className="py-12"><LoadingSpinner /></div>
-                ) : schedule.length > 0 ? (
+                ) : scheduleData.length > 0 ? (
                     <div className="min-w-[800px]">
                         {/* Header Row (Times) */}
                         <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(120px,1fr))] gap-2 mb-2">
