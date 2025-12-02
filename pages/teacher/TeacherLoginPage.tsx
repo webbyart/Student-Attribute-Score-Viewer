@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
 import { Link, useNavigate } from 'react-router-dom';
@@ -28,7 +27,7 @@ const TeacherLoginPage: React.FC = () => {
         if (msg.includes('Invalid login credentials')) {
             msg = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
         } else if (msg.includes('Email not confirmed')) {
-            msg = 'อีเมลนี้ยังไม่ได้ยืนยันตัวตน (กรุณาตรวจสอบ Email)';
+            msg = "อีเมลนี้ยังไม่ได้ยืนยันตัวตน (หากใช้อีเมลปลอม กรุณาปิด 'Confirm email' ใน Supabase Authentication -> Providers -> Email)";
         }
         
         setError(msg);

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Card from '../../components/ui/Card';
 import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
@@ -10,6 +9,7 @@ const StudentDashboardPage: React.FC = () => {
   const contextData = useOutletContext<StudentData>();
   const [localTasks, setLocalTasks] = useState<Task[]>(contextData.tasks);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<'All' | TaskCategory>('All');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,6 +26,14 @@ const StudentDashboardPage: React.FC = () => {
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
+  // Notification Filter Logic
+  const filteredNotifications = notifications.filter(n => {
+      if (notificationFilter === 'All') return true;
+      // We need to find the task associated with the notification to check category
+      const associatedTask = contextData.tasks.find(t => t.id === n.task_id);
+      return associatedTask?.category === notificationFilter;
+  });
+
   // Progress Calculation
   const totalTasks = localTasks.length;
   const completedTasks = localTasks.filter(t => t.isCompleted).length;
@@ -33,11 +41,14 @@ const StudentDashboardPage: React.FC = () => {
 
   const handleNotificationClick = async () => {
       setShowNotifications(!showNotifications);
-      if (unreadCount > 0) {
-           notifications.forEach(n => {
-               if(!n.is_read) markNotificationRead(n.id);
-           });
-      }
+      // Mark read logic is usually per item, but we can do it on close or open if preferred
+      // For now, we keep manual mark or mark all? Let's leave as is but just toggle view.
+  }
+  
+  const handleMarkAsRead = (nId: string) => {
+      markNotificationRead(nId);
+      // Optimistic update handled by Supabase subscription in parent layout ideally, 
+      // but here we might need to force refresh or rely on parent state update.
   }
 
   const handleToggleTask = async (task: Task) => {
@@ -49,6 +60,18 @@ const StudentDashboardPage: React.FC = () => {
       // API Call
       await toggleTaskStatus(student.student_id, task.id, newStatus);
   };
+
+  const handleShare = () => {
+      if (navigator.share) {
+          navigator.share({
+              title: `Dashboard ของ ${student.student_name}`,
+              url: window.location.href
+          }).catch(console.error);
+      } else {
+          navigator.clipboard.writeText(window.location.href);
+          alert('คัดลอกลิงก์แล้ว!');
+      }
+  }
 
   const menus = [
     { label: TaskCategoryLabel[TaskCategory.CLASS_SCHEDULE], category: TaskCategory.CLASS_SCHEDULE, icon: '📅', color: 'bg-blue-100 text-blue-600' },
@@ -74,33 +97,58 @@ const StudentDashboardPage: React.FC = () => {
             </div>
         </div>
         
-        {/* Notification Bell */}
-        <div className="relative cursor-pointer" onClick={handleNotificationClick}>
-             <div className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition">
-                <svg className={`w-6 h-6 ${unreadCount > 0 ? 'text-purple-600 animate-pulse' : 'text-slate-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-             </div>
-             {unreadCount > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
-             
-             {/* Notification Dropdown */}
-             {showNotifications && (
-                 <div className="absolute right-0 top-12 w-72 bg-white rounded-xl shadow-xl z-50 border border-slate-100 overflow-hidden">
-                     <div className="bg-purple-50 p-3 border-b border-purple-100">
-                         <h3 className="font-bold text-purple-800 text-sm">การแจ้งเตือน</h3>
-                     </div>
-                     <div className="max-h-60 overflow-y-auto">
-                         {notifications.length > 0 ? notifications.map(n => (
-                             <div key={n.id} className={`p-3 border-b border-slate-50 text-sm ${n.is_read ? 'bg-white' : 'bg-blue-50'}`}>
-                                 <p className="text-slate-800">{n.message}</p>
-                                 <p className="text-xs text-slate-400 mt-1">{new Date(n.created_at).toLocaleDateString('th-TH')}</p>
-                             </div>
-                         )) : (
-                             <div className="p-4 text-center text-slate-400 text-xs">ไม่มีการแจ้งเตือน</div>
-                         )}
-                     </div>
-                 </div>
-             )}
+        <div className="flex items-center gap-3">
+            {/* Share Button */}
+            <button 
+                onClick={handleShare}
+                className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition text-slate-500"
+            >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+            </button>
+
+            {/* Notification Bell */}
+            <div className="relative cursor-pointer" onClick={handleNotificationClick}>
+                <div className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition">
+                    <svg className={`w-6 h-6 ${unreadCount > 0 ? 'text-purple-600 animate-pulse' : 'text-slate-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                </div>
+                {unreadCount > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
+                
+                {/* Notification Dropdown */}
+                {showNotifications && (
+                    <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-xl z-50 border border-slate-100 overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="bg-purple-50 p-3 border-b border-purple-100 flex justify-between items-center">
+                            <h3 className="font-bold text-purple-800 text-sm">การแจ้งเตือน</h3>
+                            <button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                        </div>
+                        {/* Filter Bar */}
+                        <div className="flex gap-2 p-2 overflow-x-auto border-b border-slate-50 no-scrollbar">
+                            <button onClick={() => setNotificationFilter('All')} className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap ${notificationFilter === 'All' ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500'}`}>ทั้งหมด</button>
+                            {Object.values(TaskCategory).map(cat => (
+                                <button key={cat} onClick={() => setNotificationFilter(cat)} className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap ${notificationFilter === cat ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500'}`}>{TaskCategoryLabel[cat]}</button>
+                            ))}
+                        </div>
+
+                        <div className="max-h-60 overflow-y-auto">
+                            {filteredNotifications.length > 0 ? filteredNotifications.map(n => (
+                                <div key={n.id} onClick={() => handleMarkAsRead(n.id)} className={`p-3 border-b border-slate-50 text-sm cursor-pointer hover:bg-slate-50 ${n.is_read ? 'bg-white opacity-60' : 'bg-blue-50'}`}>
+                                    <p className="text-slate-800 font-medium text-xs leading-snug">{n.message}</p>
+                                    <p className="text-[10px] text-slate-400 mt-1 flex justify-between">
+                                        <span>{new Date(n.created_at).toLocaleDateString('th-TH', { hour: '2-digit', minute:'2-digit' })}</span>
+                                        {!n.is_read && <span className="text-blue-500 font-bold">• ใหม่</span>}
+                                    </p>
+                                </div>
+                            )) : (
+                                <div className="p-8 text-center text-slate-400 text-xs flex flex-col items-center">
+                                    <span className="text-2xl mb-1">🔕</span>
+                                    ไม่มีการแจ้งเตือนในหมวดนี้
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
       </div>
 

@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Card from '../../components/ui/Card';
 import { 
     createTask,
@@ -13,7 +12,9 @@ import {
     saveSystemSettings,
     testLineNotification,
     generateTaskFlexMessage,
-    checkDatabaseHealth
+    checkDatabaseHealth,
+    sendLineNotification,
+    bulkRegisterStudents
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
@@ -44,6 +45,8 @@ const TeacherDashboardPage: React.FC = () => {
     const [editingUser, setEditingUser] = useState<any | null>(null);
     const [viewingStudentId, setViewingStudentId] = useState<string | null>(null);
     const [userSearch, setUserSearch] = useState('');
+    const csvInputRef = useRef<HTMLInputElement>(null);
+    const [importStatus, setImportStatus] = useState<string>('');
     
     // Settings State - Pre-filled with provided credentials
     const [lineToken, setLineToken] = useState('vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=');
@@ -176,7 +179,9 @@ const TeacherDashboardPage: React.FC = () => {
             category: TaskCategory.HOMEWORK,
             priority: 'High',
             targetGrade: 'ม.4',
-            targetClassroom: '2'
+            targetClassroom: '2',
+            createdBy: teacher?.name || 'Admin',
+            createdAt: new Date().toISOString()
         };
         
         // Pass the object to generate Flex
@@ -294,7 +299,25 @@ const TeacherDashboardPage: React.FC = () => {
                 const result = await createTask(taskPayload);
 
                 if (result.success) {
-                    setMessage('บันทึกข้อมูลและส่งแจ้งเตือนเรียบร้อยแล้ว');
+                    setMessage('บันทึกข้อมูลสำเร็จ');
+                    
+                    // --- Auto Send LINE Notification ---
+                    if (testGroupId) {
+                        // Construct the full Task object for the Flex Message generator
+                        const fullTask: Task = {
+                            id: result.data?.id || 'temp',
+                            ...taskPayload,
+                            createdAt: new Date().toISOString(),
+                            createdBy: teacher.name,
+                            isCompleted: false
+                        };
+                        
+                        // Send notification in background
+                        sendLineNotification(testGroupId, fullTask)
+                            .then(() => setMessage('บันทึกข้อมูลและส่งแจ้งเตือน LINE แล้ว'))
+                            .catch(err => console.error("Auto LINE notification failed:", err));
+                    }
+
                     handleCancelEdit();
                     loadTasks();
                 } else {
@@ -334,6 +357,65 @@ const TeacherDashboardPage: React.FC = () => {
             alert('เกิดข้อผิดพลาด: ' + result.message);
         }
     };
+    
+    // --- Bulk Import ---
+    const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setImportStatus('กำลังอ่านไฟล์...');
+        
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const text = event.target?.result as string;
+            const lines = text.split('\n');
+            const studentsToImport: any[] = [];
+            
+            // Assume format: student_id, full_name, email, grade, classroom, password
+            // Skip header if it contains "student_id"
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                
+                const cols = line.split(',').map(c => c.trim());
+                if (i === 0 && cols[0].toLowerCase().includes('student_id')) continue;
+                
+                if (cols.length >= 6) {
+                    studentsToImport.push({
+                        student_id: cols[0],
+                        student_name: cols[1],
+                        email: cols[2],
+                        grade: cols[3],
+                        classroom: cols[4],
+                        password: cols[5]
+                    });
+                }
+            }
+            
+            if (studentsToImport.length === 0) {
+                setImportStatus('ไม่พบข้อมูลที่ถูกต้องในไฟล์ CSV (รูปแบบ: student_id, name, email, grade, class, password)');
+                return;
+            }
+
+            setImportStatus(`กำลังนำเข้าข้อมูล ${studentsToImport.length} รายการ...`);
+            
+            const result = await bulkRegisterStudents(studentsToImport);
+            
+            if (result.success) {
+                setImportStatus(`✅ นำเข้าสำเร็จ ${result.count} รายการ ${result.errors.length > 0 ? `(มีข้อผิดพลาด ${result.errors.length} รายการ - ดู Console)` : ''}`);
+                if (result.errors.length > 0) console.warn("Import Errors:", result.errors);
+                loadUsers();
+            } else {
+                setImportStatus(`❌ เกิดข้อผิดพลาด: ${result.errors.join(', ')}`);
+            }
+            
+            // Clear input
+            if (csvInputRef.current) csvInputRef.current.value = '';
+        };
+        
+        reader.readAsText(file);
+    };
+
 
     const handleDateClick = (date: Date, dayTasks: Task[]) => {
         setSelectedDate(date);
@@ -549,6 +631,11 @@ const TeacherDashboardPage: React.FC = () => {
                                     {isSubmitting ? 'กำลังบันทึก...' : (editingTaskId ? 'บันทึกการแก้ไข' : 'โพสต์งานทันที')}
                                 </button>
                                 {message && <p className={`text-center mt-3 text-sm font-medium ${message.includes('ผิดพลาด') ? 'text-red-500' : 'text-green-600'}`}>{message}</p>}
+                                {!editingTaskId && testGroupId && (
+                                    <p className="text-[10px] text-center text-slate-400 mt-1">
+                                        * ระบบจะส่งแจ้งเตือนไปที่ LINE Group ID: {testGroupId} โดยอัตโนมัติ
+                                    </p>
+                                )}
                             </div>
                         </form>
                     </Card>
@@ -635,6 +722,34 @@ const TeacherDashboardPage: React.FC = () => {
                             <button onClick={() => setUserType('student')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${userType === 'student' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>นักเรียน</button>
                             <button onClick={() => setUserType('teacher')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${userType === 'teacher' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>ครู/บุคลากร</button>
                         </div>
+
+                        {/* CSV Import Section for Students */}
+                        {userType === 'student' && (
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4">
+                                <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                    นำเข้าข้อมูลนักเรียน (CSV)
+                                </h3>
+                                <div className="flex gap-2 items-center">
+                                    <input 
+                                        type="file" 
+                                        accept=".csv"
+                                        onChange={handleCsvUpload}
+                                        ref={csvInputRef}
+                                        className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+                                    />
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-1">
+                                    Format: student_id, full_name, email, grade, classroom, password
+                                </p>
+                                {importStatus && (
+                                    <div className="mt-2 text-xs font-medium p-2 bg-slate-50 rounded text-slate-700">
+                                        {importStatus}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <div className="relative mb-4">
                             <input type="text" placeholder="ค้นหาชื่อ, รหัสนักเรียน..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-400 focus:outline-none bg-white shadow-sm"/>
                             <svg className="w-5 h-5 text-slate-400 absolute left-3 top-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>

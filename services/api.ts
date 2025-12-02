@@ -1,4 +1,3 @@
-
 import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Role, TimetableEntry, SystemSettings, TaskCategoryLabel } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
@@ -303,40 +302,57 @@ export const saveSystemSettings = async (settings: Record<string, string>): Prom
 
 // Helper to generate a beautiful Flex Message from a Task
 export const generateTaskFlexMessage = (task: Task) => {
+    // Config based on category
     let headerColor = '#6B7280'; // Default Slate
     let headerText = 'ภาระงานทั่วไป';
-    let heroImage = '';
+    let heroImage = 'https://cdn-icons-png.flaticon.com/512/2666/2666505.png'; // Default
 
     switch(task.category) {
         case TaskCategory.HOMEWORK: 
             headerColor = '#F59E0B'; // Orange
-            headerText = 'การบ้าน'; 
-            heroImage = 'https://cdn-icons-png.flaticon.com/512/3079/3079165.png'; // Example icon
+            headerText = '📝 การบ้านใหม่'; 
+            heroImage = 'https://cdn-icons-png.flaticon.com/512/3079/3079165.png'; 
             break;
         case TaskCategory.EXAM_SCHEDULE: 
             headerColor = '#EF4444'; // Red
-            headerText = 'ตารางสอบ'; 
+            headerText = '🚨 แจ้งกำหนดการสอบ'; 
             heroImage = 'https://cdn-icons-png.flaticon.com/512/3238/3238016.png';
             break;
         case TaskCategory.CLASS_SCHEDULE: 
             headerColor = '#3B82F6'; // Blue
-            headerText = 'ตารางเรียน'; 
+            headerText = '📅 ตารางเรียน/นัดหมาย'; 
             heroImage = 'https://cdn-icons-png.flaticon.com/512/2602/2602414.png';
             break;
         case TaskCategory.ACTIVITY_INSIDE: 
             headerColor = '#10B981'; // Green
-            headerText = 'กิจกรรมภายใน'; 
+            headerText = '🏫 กิจกรรมภายใน'; 
             heroImage = 'https://cdn-icons-png.flaticon.com/512/2942/2942953.png';
             break;
         case TaskCategory.ACTIVITY_OUTSIDE: 
             headerColor = '#8B5CF6'; // Purple
-            headerText = 'กิจกรรมภายนอก'; 
+            headerText = '🚌 กิจกรรมภายนอก'; 
             heroImage = 'https://cdn-icons-png.flaticon.com/512/3062/3062634.png';
             break;
     }
 
-    const priorityBadge = task.priority === 'High' ? '🔥 ด่วน' : (task.priority === 'Medium' ? '⭐ สำคัญ' : 'ปกติ');
-    // const priorityColor = task.priority === 'High' ? '#EF4444' : (task.priority === 'Medium' ? '#F59E0B' : '#999999');
+    const priorityBadge = task.priority === 'High' ? '🔥 ด่วนที่สุด' : (task.priority === 'Medium' ? '⭐ สำคัญ' : 'ℹ️ ทั่วไป');
+    
+    // Formatting Dates
+    const createdDate = new Date(task.createdAt || new Date()).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+    const dueDateObj = new Date(task.dueDate);
+    const dueDateStr = dueDateObj.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+    const dueTimeStr = dueDateObj.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+
+    // Formatting Target
+    let targetText = "ทุกคน";
+    if (task.targetStudentId) targetText = `เฉพาะบุคคล (${task.targetStudentId})`;
+    else if (task.targetGrade && task.targetClassroom) targetText = `ชั้น ${task.targetGrade}/${task.targetClassroom}`;
+    else if (task.targetGrade) targetText = `ระดับชั้น ${task.targetGrade}`;
+
+    // Formatting Attachments
+    const attachmentText = task.attachments && task.attachments.length > 0 
+        ? `📎 แนบไฟล์ ${task.attachments.length} รายการ` 
+        : "ไม่มีเอกสารแนบ";
 
     // LINE Flex Message JSON Structure
     return {
@@ -355,9 +371,9 @@ export const generateTaskFlexMessage = (task: Task) => {
                         contents: [
                              {
                                 type: 'image',
-                                url: heroImage || 'https://via.placeholder.com/150',
+                                url: heroImage,
                                 flex: 0,
-                                size: 'xxs',
+                                size: 'xs',
                                 aspectRatio: '1:1',
                                 gravity: 'center'
                              },
@@ -366,25 +382,16 @@ export const generateTaskFlexMessage = (task: Task) => {
                                 text: headerText,
                                 color: '#FFFFFF',
                                 weight: 'bold',
-                                size: 'sm',
+                                size: 'md',
                                 gravity: 'center',
                                 margin: 'md',
                                 flex: 1
-                            },
-                             {
-                                type: 'text',
-                                text: priorityBadge,
-                                color: '#FFFFFF',
-                                size: 'xs',
-                                weight: 'bold',
-                                align: 'end',
-                                gravity: 'center'
-                             }
+                            }
                         ]
                     }
                 ],
                 backgroundColor: headerColor,
-                paddingAll: '15px'
+                paddingAll: '16px'
             },
             body: {
                 type: 'box',
@@ -396,20 +403,28 @@ export const generateTaskFlexMessage = (task: Task) => {
                         weight: 'bold',
                         size: 'xl',
                         wrap: true,
-                        margin: 'md',
-                        color: '#333333'
+                        color: '#1F2937'
                     },
                     {
                         type: 'text',
                         text: task.subject,
                         size: 'sm',
-                        color: '#888888',
+                        color: '#6B7280',
+                        weight: 'bold',
                         margin: 'xs'
+                    },
+                    {
+                         type: 'text',
+                         text: priorityBadge,
+                         size: 'xs',
+                         color: task.priority === 'High' ? '#EF4444' : '#F59E0B',
+                         weight: 'bold',
+                         margin: 'sm'
                     },
                     {
                         type: 'separator',
                         margin: 'lg',
-                        color: '#F0F0F0'
+                        color: '#E5E7EB'
                     },
                     {
                         type: 'box',
@@ -417,76 +432,71 @@ export const generateTaskFlexMessage = (task: Task) => {
                         margin: 'lg',
                         spacing: 'sm',
                         contents: [
-                            {
+                             {
                                 type: 'box',
                                 layout: 'baseline',
-                                spacing: 'sm',
                                 contents: [
-                                    {
-                                        type: 'text',
-                                        text: 'กำหนดส่ง',
-                                        color: '#aaaaaa',
-                                        size: 'xs',
-                                        flex: 2
-                                    },
-                                    {
-                                        type: 'text',
-                                        text: new Date(task.dueDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' น.',
-                                        wrap: true,
-                                        color: '#666666',
-                                        size: 'sm',
-                                        flex: 5,
-                                        weight: 'bold'
-                                    }
+                                    { type: 'text', text: '📅 วันที่สั่ง', color: '#9CA3AF', size: 'xs', flex: 2 },
+                                    { type: 'text', text: createdDate, color: '#4B5563', size: 'xs', flex: 4, wrap: true }
                                 ]
                             },
                             {
                                 type: 'box',
                                 layout: 'baseline',
-                                spacing: 'sm',
                                 contents: [
-                                    {
-                                        type: 'text',
-                                        text: 'เป้าหมาย',
-                                        color: '#aaaaaa',
-                                        size: 'xs',
-                                        flex: 2
-                                    },
-                                    {
-                                        type: 'text',
-                                        text: task.targetStudentId ? `งานส่วนตัว (${task.targetStudentId})` : `${task.targetGrade}/${task.targetClassroom}`,
-                                        wrap: true,
-                                        color: '#666666',
-                                        size: 'sm',
-                                        flex: 5
-                                    }
+                                    { type: 'text', text: '⏰ กำหนดส่ง', color: '#9CA3AF', size: 'xs', flex: 2 },
+                                    { type: 'text', text: `${dueDateStr} (${dueTimeStr})`, color: '#DC2626', size: 'xs', flex: 4, weight: 'bold', wrap: true }
+                                ]
+                            },
+                             {
+                                type: 'box',
+                                layout: 'baseline',
+                                contents: [
+                                    { type: 'text', text: '👨‍🏫 ผู้สั่ง', color: '#9CA3AF', size: 'xs', flex: 2 },
+                                    { type: 'text', text: task.createdBy || 'คุณครู', color: '#4B5563', size: 'xs', flex: 4, wrap: true }
+                                ]
+                            },
+                             {
+                                type: 'box',
+                                layout: 'baseline',
+                                contents: [
+                                    { type: 'text', text: '🎯 เป้าหมาย', color: '#9CA3AF', size: 'xs', flex: 2 },
+                                    { type: 'text', text: targetText, color: '#4B5563', size: 'xs', flex: 4, wrap: true }
+                                ]
+                            },
+                             {
+                                type: 'box',
+                                layout: 'baseline',
+                                contents: [
+                                    { type: 'text', text: '📂 ไฟล์แนบ', color: '#9CA3AF', size: 'xs', flex: 2 },
+                                    { type: 'text', text: attachmentText, color: '#6366F1', size: 'xs', flex: 4, wrap: true }
                                 ]
                             }
                         ]
                     },
                     {
-                         type: 'box',
-                         layout: 'vertical',
-                         margin: 'lg',
-                         backgroundColor: '#F9F9F9',
-                         cornerRadius: 'md',
-                         paddingAll: 'md',
-                         contents: [
-                              {
+                        type: 'box',
+                        layout: 'vertical',
+                        margin: 'lg',
+                        backgroundColor: '#F3F4F6',
+                        cornerRadius: 'md',
+                        paddingAll: '12px',
+                        contents: [
+                             {
                                 type: 'text',
                                 text: task.description || 'ไม่มีรายละเอียดเพิ่มเติม',
                                 wrap: true,
-                                color: '#666666',
-                                size: 'xs'
+                                color: '#4B5563',
+                                size: 'xs',
+                                maxLines: 4
                               }
-                         ]
+                        ]
                     }
                 ]
             },
             footer: {
                 type: 'box',
                 layout: 'vertical',
-                spacing: 'sm',
                 contents: [
                     {
                         type: 'button',
@@ -495,17 +505,12 @@ export const generateTaskFlexMessage = (task: Task) => {
                         color: headerColor,
                         action: {
                             type: 'uri',
-                            label: 'ดูรายละเอียด',
-                            uri: 'https://liff.line.me/YOUR_LIFF_ID' 
+                            label: 'ดูรายละเอียดงาน',
+                            uri: 'https://liff.line.me/YOUR_LIFF_ID' // Replace with actual LIFF or Web URL
                         }
                     }
                 ],
-                paddingAll: '15px'
-            },
-            styles: {
-                footer: {
-                    separator: true
-                }
+                paddingAll: '16px'
             }
         }
     };
@@ -664,6 +669,28 @@ export const registerStudent = async (data: any): Promise<{ success: boolean; me
         return { success: false, message: error.message || 'การลงทะเบียนล้มเหลว' };
     }
 };
+
+export const bulkRegisterStudents = async (students: any[]): Promise<{ success: boolean, count: number, errors: string[] }> => {
+    let successCount = 0;
+    const errors: string[] = [];
+
+    for (const student of students) {
+        // Basic validation
+        if (!student.student_id || !student.email || !student.password) {
+            errors.push(`ข้ามแถว: ข้อมูลไม่ครบ (ID: ${student.student_id || 'Unknown'})`);
+            continue;
+        }
+
+        const result = await registerStudent(student);
+        if (result.success) {
+            successCount++;
+        } else {
+            errors.push(`Error ID ${student.student_id}: ${result.message}`);
+        }
+    }
+
+    return { success: successCount > 0, count: successCount, errors };
+}
 
 export const loginStudent = async (studentId: string, email: string, password?: string): Promise<Student | null> => {
     try {
@@ -871,7 +898,7 @@ export const registerTeacher = async (name: string, email: string, password: str
         
         // Check if registration requires email confirmation
         if (authData.user && !authData.session) {
-             return { success: false, message: 'กรุณายืนยันอีเมลก่อนเข้าใช้งาน (ตรวจสอบ Inbox ของคุณ หรือปิด Confirm Email ใน Supabase)' };
+             return { success: false, message: "อีเมลนี้ยังไม่ได้ยืนยันตัวตน (หากใช้อีเมลปลอม กรุณาปิด 'Confirm email' ใน Supabase Authentication -> Providers -> Email)" };
         }
         
         if (authData.user) {
@@ -900,11 +927,6 @@ export const loginTeacher = async (email: string, password: string): Promise<Tea
         if (error) {
              console.log("Login failed:", error.message);
 
-             // Handle Email Not Confirmed specifically
-             if (error.message.includes("Email not confirmed")) {
-                 throw new Error("อีเมลนี้ยังไม่ได้ยืนยันตัวตน (หากใช้อีเมลปลอม กรุณาปิด 'Confirm email' ใน Supabase Authentication -> Providers -> Email)");
-             }
-
              // 2. Special Handling for "admin@admin": Auto-Heal / Auto-Register
              if (email === 'admin@admin' && password === 'admin123') {
                  // Only try to register if the error suggests user doesn't exist or credentials failed (maybe account deleted)
@@ -927,13 +949,14 @@ export const loginTeacher = async (email: string, password: string): Promise<Tea
                              });
                              return { teacher_id: retryData.user.id, name: 'Admin Master', email };
                          }
-                     } else if (regResult.message.includes('ยืนยันอีเมล')) {
-                         // Registration worked but needs confirmation
-                         throw new Error("ระบบสร้างบัญชี Admin แล้ว แต่ติดการยืนยันอีเมล (กรุณาปิด 'Confirm email' ใน Supabase)");
-                     } else if (regResult.message.includes("already registered")) {
+                     } else if (regResult.message.includes('already registered')) {
                          // User exists, password must be wrong
                          throw new Error("รหัสผ่านไม่ถูกต้อง (หากลืมรหัสผ่าน Admin ให้ลบ User ใน Supabase Auth แล้วลองใหม่)");
+                     } else if (regResult.message.includes('ยืนยันตัวตน')) {
+                         // If registration requires email confirmation, fail with that message
+                         throw new Error(regResult.message);
                      }
+                     // Fall through if other error - standard error will be thrown below
                  }
              }
              throw error;
@@ -1031,7 +1054,7 @@ export const getAllTasks = async (): Promise<Task[]> => {
     }
 };
 
-export const createTask = async (task: any): Promise<{ success: boolean; message: string }> => {
+export const createTask = async (task: any): Promise<{ success: boolean; message: string; data?: any }> => {
     try {
          const { data: { user } } = await supabase.auth.getUser();
          
@@ -1049,10 +1072,10 @@ export const createTask = async (task: any): Promise<{ success: boolean; message
             created_by: user?.id
         };
 
-        const { error } = await supabase.from('tasks').insert(dbTask);
+        const { data, error } = await supabase.from('tasks').insert(dbTask).select().single();
         
         if (error) throw error;
-        return { success: true, message: 'สร้างงานสำเร็จ' };
+        return { success: true, message: 'สร้างงานสำเร็จ', data: data };
     } catch (e: any) {
         return { success: false, message: e.message };
     }

@@ -1,12 +1,11 @@
-
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import FileChip from '../../components/ui/FileChip';
-import { StudentData, TaskCategory, TaskCategoryLabel } from '../../types';
+import { StudentData, TaskCategory, TaskCategoryLabel, Attribute } from '../../types';
 
 const StudentSummaryPage: React.FC = () => {
-  const { tasks } = useOutletContext<StudentData>();
+  const { tasks, scores, attributes } = useOutletContext<StudentData>();
   const [selectedCategory, setSelectedCategory] = useState<TaskCategory | 'ALL'>('ALL');
 
   const filteredTasks = selectedCategory === 'ALL' 
@@ -15,15 +14,42 @@ const StudentSummaryPage: React.FC = () => {
 
   const categories = Object.values(TaskCategory);
 
+  // Calculate Average Scores for Display
+  const attributeAverages = useMemo(() => {
+    if (!attributes || !scores) return [];
+    return attributes.map(attr => {
+        const relevantScores = scores.filter(s => s.attribute_id === attr.attribute_id);
+        const average = relevantScores.length > 0
+            ? Math.round(relevantScores.reduce((sum, s) => sum + s.score, 0) / relevantScores.length)
+            : 0;
+        return { ...attr, average };
+    }).sort((a, b) => b.average - a.average);
+  }, [attributes, scores]);
+
   return (
     <div className="space-y-6 animate-fade-in pb-20">
       <header>
-        <h1 className="text-2xl font-bold text-slate-800">กลุ่มภาระงาน</h1>
-        <p className="text-sm text-slate-500">เลือกประเภทเพื่อดูรายการ</p>
+        <h1 className="text-2xl font-bold text-slate-800">สรุปผลงาน & กิจกรรม</h1>
+        <p className="text-sm text-slate-500">ภาพรวมคะแนนคุณลักษณะและงานทั้งหมด</p>
       </header>
 
+      {/* Score Highlights Badge Section */}
+      {attributeAverages.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {attributeAverages.map(attr => (
+                  <div key={attr.attribute_id} className="bg-white rounded-xl p-3 shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
+                      <div className={`text-xl font-bold mb-1 ${attr.average >= 80 ? 'text-green-500' : (attr.average >= 50 ? 'text-orange-500' : 'text-red-500')}`}>
+                          {attr.average}
+                          <span className="text-xs text-slate-400 font-normal ml-0.5">/100</span>
+                      </div>
+                      <span className="text-xs font-medium text-slate-600 line-clamp-2">{attr.attribute_name}</span>
+                  </div>
+              ))}
+          </div>
+      )}
+
       {/* Horizontal Scroll Menu */}
-      <div className="flex overflow-x-auto gap-2 pb-2 no-scrollbar">
+      <div className="flex overflow-x-auto gap-2 pb-2 mt-6 no-scrollbar">
           <button 
             onClick={() => setSelectedCategory('ALL')}
             className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-medium transition ${selectedCategory === 'ALL' ? 'bg-slate-800 text-white shadow-lg' : 'bg-white text-slate-600 border border-slate-100'}`}
