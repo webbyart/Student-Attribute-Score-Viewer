@@ -1,10 +1,11 @@
+
 import React, { useState } from 'react';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 
 const TeacherLoginPage: React.FC = () => {
-  const [email, setEmail] = useState('admin@admin');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('admin@admin.com');
+  const [password, setPassword] = useState('123456');
   const [error, setError] = useState('');
   const { login, loading } = useTeacherAuth();
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ const TeacherLoginPage: React.FC = () => {
     e.preventDefault();
     setError('');
     try {
-        const teacher = await login(email, password);
+        const teacher = await login(email.trim(), password.trim());
         if (!teacher) {
           setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
         } else {
@@ -27,7 +28,7 @@ const TeacherLoginPage: React.FC = () => {
         if (msg.includes('Invalid login credentials')) {
             msg = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
         } else if (msg.includes('Email not confirmed')) {
-            msg = "อีเมลนี้ยังไม่ได้ยืนยันตัวตน (หากใช้อีเมลปลอม กรุณาปิด 'Confirm email' ใน Supabase Authentication -> Providers -> Email)";
+            msg = "อีเมลนี้ยังไม่ได้ยืนยันตัวตน";
         }
         
         setError(msg);

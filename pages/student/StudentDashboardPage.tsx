@@ -4,6 +4,7 @@ import Card from '../../components/ui/Card';
 import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 import { StudentData, TaskCategory, TaskCategoryLabel, Task } from '../../types';
 import { markNotificationRead, toggleTaskStatus } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 const StudentDashboardPage: React.FC = () => {
   // We need local state for tasks to update UI instantly when checked
@@ -16,6 +17,7 @@ const StudentDashboardPage: React.FC = () => {
   const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
 
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   useEffect(() => {
     setLocalTasks(contextData.tasks);
@@ -39,10 +41,14 @@ const StudentDashboardPage: React.FC = () => {
       return associatedTask?.category === notificationFilter;
   });
 
-  // Progress Calculation
+  // Stats Calculation
   const totalTasks = localTasks.length;
-  const completedTasks = localTasks.filter(t => t.isCompleted).length;
-  const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const completedTasksCount = localTasks.filter(t => t.isCompleted).length;
+  const progressPercentage = totalTasks > 0 ? Math.round((completedTasksCount / totalTasks) * 100) : 0;
+
+  const now = new Date();
+  const overdueTasksCount = localTasks.filter(t => !t.isCompleted && new Date(t.dueDate) < now).length;
+  const pendingTasksCount = localTasks.filter(t => !t.isCompleted && new Date(t.dueDate) >= now).length;
 
   const handleNotificationClick = async () => {
       setShowNotifications(!showNotifications);
@@ -62,6 +68,13 @@ const StudentDashboardPage: React.FC = () => {
       // API Call
       await toggleTaskStatus(student.student_id, task.id, newStatus);
   };
+
+  const handleLogout = () => {
+      if(window.confirm('ต้องการออกจากระบบใช่หรือไม่?')) {
+          logout();
+          navigate('/login-select');
+      }
+  }
 
   const handleShare = () => {
       if (navigator.share) {
@@ -100,24 +113,15 @@ const StudentDashboardPage: React.FC = () => {
             </div>
         </div>
         
-        <div className="flex items-center gap-3">
-            {/* Share Button */}
-            <button 
-                onClick={handleShare}
-                className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition text-slate-500"
-                title="แชร์โปรไฟล์"
-            >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-            </button>
-
+        <div className="flex items-center gap-2">
             {/* Notification Bell */}
             <div className="relative cursor-pointer">
-                <div onClick={handleNotificationClick} className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition">
+                <div onClick={handleNotificationClick} className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition relative">
                     <svg className={`w-6 h-6 ${unreadCount > 0 ? 'text-purple-600 animate-pulse' : 'text-slate-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                     </svg>
+                    {unreadCount > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}
                 </div>
-                {unreadCount > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
                 
                 {/* Notification Dropdown */}
                 {showNotifications && (
@@ -163,17 +167,26 @@ const StudentDashboardPage: React.FC = () => {
                     </div>
                 )}
             </div>
+
+             {/* Logout Button */}
+            <button 
+                onClick={handleLogout}
+                className="p-2 bg-red-50 text-red-500 rounded-full shadow-sm hover:bg-red-100 transition"
+                title="ออกจากระบบ"
+            >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            </button>
         </div>
       </div>
 
-      {/* Progress Card - Enhanced UI */}
+      {/* Progress Card */}
       <Card className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white border-none shadow-lg shadow-indigo-200/50 relative overflow-hidden transform transition-all hover:scale-[1.01]">
           <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
           <div className="relative z-10">
             <div className="flex justify-between items-end mb-3">
                 <div>
-                    <h3 className="font-bold text-lg mb-1">ความคืบหน้าของฉัน</h3>
-                    <p className="text-xs text-indigo-100 opacity-90">งานที่เสร็จสิ้น {completedTasks} จาก {totalTasks} งาน</p>
+                    <h3 className="font-bold text-lg mb-1">ความคืบหน้า</h3>
+                    <p className="text-xs text-indigo-100 opacity-90">เสร็จสิ้น {completedTasksCount} จาก {totalTasks} งาน</p>
                 </div>
                 <div className="text-4xl font-black tracking-tight">{progressPercentage}%</div>
             </div>
@@ -183,27 +196,53 @@ const StudentDashboardPage: React.FC = () => {
           </div>
       </Card>
 
+      {/* Stats Summary Grid */}
+      <div className="grid grid-cols-3 gap-3">
+          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center">
+              <span className="text-2xl font-bold text-green-500">{completedTasksCount}</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase mt-1">เสร็จแล้ว</span>
+          </div>
+          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center">
+              <span className="text-2xl font-bold text-yellow-500">{pendingTasksCount}</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase mt-1">รอทำ</span>
+          </div>
+          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center">
+              <span className="text-2xl font-bold text-red-500">{overdueTasksCount}</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase mt-1">เลยกำหนด</span>
+          </div>
+      </div>
+
       {/* Main Menu Grid */}
       <div>
         <h2 className="text-lg font-bold text-slate-700 mb-3">เมนูหลัก</h2>
         <div className="grid grid-cols-3 gap-3">
-            {menus.map((menu) => (
-                <button 
-                    key={menu.category}
-                    onClick={() => navigate(`categories`)} 
-                    className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm hover:shadow-md transition border border-slate-50 aspect-square group active:scale-95"
-                >
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl mb-2 transition-transform group-hover:scale-110 ${menu.color}`}>
-                        {menu.icon}
-                    </div>
-                    <span className="text-xs font-bold text-slate-600 text-center leading-tight">{menu.label}</span>
-                </button>
-            ))}
+            {menus.map((menu) => {
+                // Calculate pending tasks count for this category
+                const count = localTasks.filter(t => t.category === menu.category && !t.isCompleted).length;
+                
+                return (
+                    <button 
+                        key={menu.category}
+                        onClick={() => navigate(`categories`)} 
+                        className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm hover:shadow-md transition border border-slate-50 aspect-square group active:scale-95 relative"
+                    >
+                        {count > 0 && (
+                            <div className="absolute top-2 right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.2rem] text-center shadow-sm">
+                                {count}
+                            </div>
+                        )}
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xl mb-2 transition-transform group-hover:scale-110 ${menu.color}`}>
+                            {menu.icon}
+                        </div>
+                        <span className="text-xs font-bold text-slate-600 text-center leading-tight">{menu.label}</span>
+                    </button>
+                )
+            })}
              <button 
                 onClick={() => navigate(`schedule`)}
                 className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm hover:shadow-md transition border border-slate-50 aspect-square group active:scale-95"
             >
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl mb-2 bg-slate-100 text-slate-600 transition-transform group-hover:scale-110">
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl mb-2 bg-slate-100 text-slate-600 transition-transform group-hover:scale-110">
                     🗓️
                 </div>
                 <span className="text-xs font-bold text-slate-600 text-center">ปฏิทินรวม</span>
@@ -211,7 +250,7 @@ const StudentDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Upcoming Tasks Feed - Enhanced UI */}
+      {/* Upcoming Tasks Feed */}
       <div>
         <div className="flex justify-between items-center mb-3">
              <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
@@ -228,13 +267,11 @@ const StudentDashboardPage: React.FC = () => {
                     
                     const isUrgent = new Date(task.dueDate).getTime() - new Date().getTime() < 86400000;
                     
-                    // Visual Indicator: Red for Urgent, Green for done (though this list is usually pending), Gray for normal
                     const statusColor = isUrgent ? 'bg-red-500' : 'bg-slate-300';
 
                     return (
                         <div key={task.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center group hover:shadow-md transition-all hover:border-purple-200">
                             <div className="flex items-start gap-3 flex-1 min-w-0 mr-3">
-                                {/* Indicator Dot */}
                                 <div className={`w-2.5 h-2.5 rounded-full ${statusColor} mt-1.5 shrink-0 ${isUrgent ? 'animate-pulse' : ''}`} />
                                 
                                 <div>

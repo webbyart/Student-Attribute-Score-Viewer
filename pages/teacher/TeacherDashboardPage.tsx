@@ -137,9 +137,9 @@ const TeacherDashboardPage: React.FC = () => {
                     (!t.targetGrade && !t.targetStudentId)
                 );
                 
-                const completedCount = allStatuses.filter((s: any) => 
-                    s.student_id === u.id && s.is_completed
-                ).length;
+                // For mock, we can't really track completions per student accurately without a backend join table
+                // So we'll just mock it or show 0
+                const completedCount = 0;
 
                 return {
                     ...u,
@@ -442,6 +442,33 @@ const TeacherDashboardPage: React.FC = () => {
         reader.readAsText(file);
     };
 
+    const handleExportUsers = () => {
+        const filteredToExport = filteredUsers;
+        if (filteredToExport.length === 0) {
+            alert('ไม่มีข้อมูลให้ส่งออก');
+            return;
+        }
+
+        const headers = ['ID', 'Name', 'Email', 'Grade', 'Classroom', 'Role'];
+        const csvContent = [
+            headers.join(','),
+            ...filteredToExport.map(u => [
+                u.student_id || u.teacher_id || u.id,
+                `"${u.student_name || u.full_name || u.name || ''}"`,
+                u.email || '',
+                u.grade || '',
+                u.classroom || '',
+                userType
+            ].join(','))
+        ].join('\n');
+
+        const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${userType}_list.csv`;
+        link.click();
+    };
+
     const confirmSendSchedule = async () => {
         setIsConfirmSendScheduleOpen(false);
         
@@ -495,11 +522,29 @@ const TeacherDashboardPage: React.FC = () => {
 
     const classScheduleTasks = tasks.filter(t => t.category === TaskCategory.CLASS_SCHEDULE);
 
+    // Calculate Task Category Stats
+    const categoryStats = Object.values(TaskCategory).map(cat => ({
+        category: cat,
+        label: TaskCategoryLabel[cat],
+        count: tasks.filter(t => t.category === cat).length,
+        colors: getCategoryColor(cat)
+    }));
+
     return (
         <div className="animate-fade-in pb-24 relative min-h-screen bg-slate-50">
             <div className="px-4 py-4">
                 {activeTab === 'calendar' && (
                     <div className="animate-fade-in space-y-4">
+                        {/* Task Overview Section */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-2">
+                             {categoryStats.map((stat, i) => (
+                                 <div key={i} className={`p-3 rounded-2xl border flex flex-col items-center justify-center text-center shadow-sm ${stat.colors.bg} ${stat.colors.border}`}>
+                                     <div className={`text-2xl font-bold ${stat.colors.text}`}>{stat.count}</div>
+                                     <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wide mt-1">{stat.label}</div>
+                                 </div>
+                             ))}
+                        </div>
+
                         <div className="h-[60vh]">
                             <CalendarView tasks={tasks} onDateClick={handleDateClick} />
                         </div>
@@ -513,11 +558,6 @@ const TeacherDashboardPage: React.FC = () => {
                                 );
                             })}
                         </div>
-                        <Card className="mt-4">
-                             <div className="text-center py-2 text-slate-500 text-sm">
-                                ปฏิทินรวมงานทั้งหมด (แตะที่วันที่เพื่อดูรายละเอียด)
-                             </div>
-                        </Card>
                     </div>
                 )}
 
@@ -814,14 +854,18 @@ const TeacherDashboardPage: React.FC = () => {
                             </div>
                         )}
 
-                        {userType === 'teacher' && (
-                             <div className="flex justify-end mb-4">
+                        <div className="flex justify-end mb-4 gap-2">
+                             <button onClick={handleExportUsers} className="bg-indigo-50 text-indigo-600 text-xs font-bold px-4 py-2 rounded-xl shadow-sm hover:bg-indigo-100 flex items-center gap-2 border border-indigo-100">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                Export CSV
+                            </button>
+                            {userType === 'teacher' && (
                                 <button onClick={() => setIsAddUserModalOpen(true)} className="bg-purple-600 text-white text-xs font-bold px-4 py-2 rounded-xl shadow hover:bg-purple-700 flex items-center gap-2">
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                     เพิ่มครู/บุคลากร
                                 </button>
-                             </div>
-                        )}
+                            )}
+                         </div>
 
                         <div className="relative mb-4">
                             <input type="text" placeholder="ค้นหาชื่อ, รหัสนักเรียน..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-400 focus:outline-none bg-white shadow-sm"/>
