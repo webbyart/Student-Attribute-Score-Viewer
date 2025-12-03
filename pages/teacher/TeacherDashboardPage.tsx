@@ -27,7 +27,6 @@ import TrashIcon from '../../assets/icons/TrashIcon';
 import PencilIcon from '../../assets/icons/PencilIcon';
 import FileChip from '../../components/ui/FileChip';
 import CalendarView from '../../components/ui/CalendarView';
-import { supabase } from '../../lib/supabaseClient';
 import StudentDetailModal from '../../components/ui/StudentDetailModal';
 import DayEventsModal from '../../components/ui/DayEventsModal';
 import TaskDetailModal from '../../components/ui/TaskDetailModal';
@@ -56,10 +55,10 @@ const TeacherDashboardPage: React.FC = () => {
     const [importStatus, setImportStatus] = useState<string>('');
     const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
     
-    // Settings State - Pre-filled with provided credentials
-    const [lineToken, setLineToken] = useState('vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=');
-    const [lineSecret, setLineSecret] = useState('b7cd5cc937837ad847aba3bf851576d9');
-    const [testUserId, setTestUserId] = useState('Ua276c047d87982958a524c1f5ac30f08');
+    // Settings State
+    const [lineToken, setLineToken] = useState('');
+    const [lineSecret, setLineSecret] = useState('');
+    const [testUserId, setTestUserId] = useState('');
     const [testGroupId, setTestGroupId] = useState(''); 
     const [settingsMessage, setSettingsMessage] = useState('');
     const [isSendingTest, setIsSendingTest] = useState(false);
@@ -107,26 +106,7 @@ const TeacherDashboardPage: React.FC = () => {
 
     useEffect(() => {
         loadTasks();
-        loadSettings(); // Load settings on mount to ensure Group ID is ready
-
-        // Real-time Subscription for Tasks
-        const taskChannel = supabase.channel('realtime-tasks')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-            loadTasks();
-        })
-        .subscribe();
-
-        // Real-time Subscription for Users (Profiles)
-        const profileChannel = supabase.channel('realtime-profiles')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-            loadUsers(); 
-        })
-        .subscribe();
-
-        return () => { 
-            supabase.removeChannel(taskChannel);
-            supabase.removeChannel(profileChannel);
-        }
+        loadSettings(); 
     }, []);
 
     useEffect(() => {
@@ -147,19 +127,16 @@ const TeacherDashboardPage: React.FC = () => {
         const fetchedUsers = await getProfiles(userType);
         
         if (userType === 'student') {
-            // Fetch task stats for students
             const allTasks = await getAllTasks();
             const allStatuses = await getAllStudentTaskStatuses();
             
             const usersWithStats = fetchedUsers.map(u => {
-                // Calculate total relevant tasks for this student
                 const studentTasks = allTasks.filter(t => 
                     (t.targetGrade === u.grade && t.targetClassroom === u.classroom) || 
                     t.targetStudentId === u.student_id ||
-                    (!t.targetGrade && !t.targetStudentId) // Global tasks
+                    (!t.targetGrade && !t.targetStudentId)
                 );
                 
-                // Calculate completed tasks
                 const completedCount = allStatuses.filter((s: any) => 
                     s.student_id === u.id && s.is_completed
                 ).length;
@@ -185,15 +162,9 @@ const TeacherDashboardPage: React.FC = () => {
 
     const loadSettings = async () => {
         const settings = await getSystemSettings();
-        if (settings['line_channel_access_token']) {
-            setLineToken(settings['line_channel_access_token']);
-        }
-        if (settings['line_channel_secret']) {
-            setLineSecret(settings['line_channel_secret']);
-        }
-        if (settings['test_group_id']) {
-            setTestGroupId(settings['test_group_id']);
-        }
+        if (settings['line_channel_access_token']) setLineToken(settings['line_channel_access_token']);
+        if (settings['line_channel_secret']) setLineSecret(settings['line_channel_secret']);
+        if (settings['test_group_id']) setTestGroupId(settings['test_group_id']);
     }
 
     const handleCheckDb = async () => {
@@ -208,7 +179,7 @@ const TeacherDashboardPage: React.FC = () => {
         const result = await saveSystemSettings({ 
             'line_channel_access_token': lineToken,
             'line_channel_secret': lineSecret,
-            'test_group_id': testGroupId // Save the group ID too for convenience
+            'test_group_id': testGroupId 
         });
         setSettingsMessage(result.message);
         setTimeout(() => setSettingsMessage(''), 3000);
@@ -221,7 +192,6 @@ const TeacherDashboardPage: React.FC = () => {
         }
 
         setIsSendingTest(true);
-        // Create a dummy task to test the Flex Message generator
         const dummyTask: any = {
             title: `ทดสอบส่งเข้า ${type === 'Group' ? 'กลุ่ม' : 'ส่วนตัว'}`,
             subject: 'วิชาวิทยาการคำนวณ',
@@ -235,7 +205,6 @@ const TeacherDashboardPage: React.FC = () => {
             createdAt: new Date().toISOString()
         };
         
-        // Pass the object to generate Flex
         const flexMessage = generateTaskFlexMessage(dummyTask);
         const result = await testLineNotification(lineToken, targetId, flexMessage);
         
@@ -303,13 +272,6 @@ const TeacherDashboardPage: React.FC = () => {
         e.preventDefault();
         if (!teacher) return;
         
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-            alert("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่");
-            window.location.reload();
-            return;
-        }
-
         setIsSubmitting(true);
         setMessage('');
 
@@ -350,8 +312,6 @@ const TeacherDashboardPage: React.FC = () => {
 
                 if (result.success) {
                     setMessage('บันทึกข้อมูลสำเร็จ');
-                    
-                    // --- Auto Send LINE Notification (ALWAYS for new tasks if Group ID set) ---
                     if (testGroupId) {
                         const fullTask: Task = {
                             id: result.data?.id || 'temp',
@@ -360,13 +320,10 @@ const TeacherDashboardPage: React.FC = () => {
                             createdBy: teacher.name,
                             isCompleted: false
                         };
-                        
-                        // Send notification regardless of priority as per user request
                         sendLineNotification(testGroupId, fullTask)
                             .then(() => setMessage('บันทึกข้อมูลและส่งแจ้งเตือนไปยังกลุ่ม LINE แล้ว ✅'))
                             .catch(err => console.error("Auto LINE notification failed:", err));
                     }
-
                     handleCancelEdit();
                     loadTasks();
                 } else {
@@ -435,7 +392,6 @@ const TeacherDashboardPage: React.FC = () => {
         }
     }
     
-    // --- Bulk Import ---
     const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -494,7 +450,6 @@ const TeacherDashboardPage: React.FC = () => {
             return;
         }
 
-        // Generate the Table-like Flex Message
         const scheduleFlexMessage = generateTimetableFlexMessage(scheduleGrade, scheduleClassroom, scheduleData);
         
         setIsSendingTest(true);
@@ -533,7 +488,8 @@ const TeacherDashboardPage: React.FC = () => {
     });
 
     const filteredUsers = users.filter(u => 
-        u.full_name.toLowerCase().includes(userSearch.toLowerCase()) ||
+        u.full_name?.toLowerCase().includes(userSearch.toLowerCase()) ||
+        u.name?.toLowerCase().includes(userSearch.toLowerCase()) ||
         (u.student_id && u.student_id.toLowerCase().includes(userSearch.toLowerCase()))
     );
 
@@ -737,11 +693,6 @@ const TeacherDashboardPage: React.FC = () => {
                                     {isSubmitting ? 'กำลังบันทึก...' : (editingTaskId ? 'บันทึกการแก้ไข' : 'โพสต์งานทันที')}
                                 </button>
                                 {message && <p className={`text-center mt-3 text-sm font-medium ${message.includes('ผิดพลาด') ? 'text-red-500' : 'text-green-600'}`}>{message}</p>}
-                                {!editingTaskId && testGroupId && (
-                                    <p className="text-[10px] text-center text-slate-400 mt-1">
-                                        * ระบบจะส่งแจ้งเตือนไปที่ LINE Group ID โดยอัตโนมัติเมื่อโพสต์งานสำเร็จ
-                                    </p>
-                                )}
                             </div>
                         </form>
                     </Card>
@@ -749,7 +700,6 @@ const TeacherDashboardPage: React.FC = () => {
 
                 {activeTab === 'history' && (
                     <div className="space-y-4 animate-fade-in">
-                        {/* ... (History content preserved) ... */}
                         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3 sticky top-0 z-10">
                             <div className="relative">
                                 <input 
@@ -890,7 +840,7 @@ const TeacherDashboardPage: React.FC = () => {
                                 <tbody className="divide-y divide-slate-50">
                                     {filteredUsers.map(user => (
                                         <tr key={user.id} className="hover:bg-purple-50/30 transition">
-                                            <td className="p-4"><div className="font-bold text-slate-800">{user.full_name}</div><div className="text-xs text-slate-400 font-mono mt-0.5">{user.login_code ? `Code: ${user.login_code}` : (userType === 'teacher' ? user.email : 'No Code')}</div></td>
+                                            <td className="p-4"><div className="font-bold text-slate-800">{user.student_name || user.full_name || user.name}</div><div className="text-xs text-slate-400 font-mono mt-0.5">{user.login_code ? `Code: ${user.login_code}` : (userType === 'teacher' ? user.email : 'No Code')}</div></td>
                                             {userType === 'student' && <td className="p-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold mr-1">{user.student_id}</span><span className="text-xs text-slate-500">{user.grade}/{user.classroom}</span></td>}
                                             {userType === 'student' && (
                                                 <td className="p-4 w-32">
@@ -1036,12 +986,12 @@ const TeacherDashboardPage: React.FC = () => {
                                     {isCheckingDb ? 'กำลังตรวจสอบ...' : '1. ตรวจสอบ'}
                                 </button>
                                 <a 
-                                    href="https://supabase.com/dashboard/project/fuiutzmkcwtuzjtbgfsg/sql/new" 
+                                    href={`https://docs.google.com/spreadsheets/d/1tidL2kyTpvyPktQjkD5ZTvLIKvWEaIOS6TTmvDVuY6s/edit`} 
                                     target="_blank" 
                                     rel="noreferrer"
-                                    className="flex-1 bg-slate-800 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-slate-700 transition flex items-center justify-center gap-2"
+                                    className="flex-1 bg-green-600 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-green-700 transition flex items-center justify-center gap-2"
                                 >
-                                    2. แก้ไข (เปิด SQL Editor)
+                                    2. เปิด Google Sheet
                                 </a>
                             </div>
 
@@ -1060,26 +1010,6 @@ const TeacherDashboardPage: React.FC = () => {
                                             )}
                                         </div>
                                     ))}
-                                </div>
-                            )}
-
-                            {missingSql && (
-                                <div className="mt-6 pt-6 border-t border-slate-100">
-                                    <h3 className="text-sm font-bold text-red-600 mb-2">⚠️ พบปัญหาโครงสร้างฐานข้อมูล</h3>
-                                    <p className="text-xs text-slate-500 mb-2">ระบบได้สร้างคำสั่ง SQL สำหรับซ่อมแซมตารางที่ขาดหายไป กรุณาคัดลอกและนำไปรันใน Supabase SQL Editor</p>
-                                    <div className="relative">
-                                        <textarea 
-                                            readOnly 
-                                            value={missingSql} 
-                                            className="w-full h-40 bg-slate-900 text-green-400 font-mono text-[10px] p-3 rounded-lg overflow-x-auto whitespace-pre"
-                                        />
-                                        <button 
-                                            onClick={() => { navigator.clipboard.writeText(missingSql); alert('คัดลอก SQL แล้ว!'); }}
-                                            className="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-white text-xs px-2 py-1 rounded"
-                                        >
-                                            Copy SQL
-                                        </button>
-                                    </div>
                                 </div>
                             )}
                         </Card>
@@ -1148,13 +1078,13 @@ const TeacherDashboardPage: React.FC = () => {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
                         <div className="p-4 bg-purple-600 text-white flex justify-between items-center"><h3 className="font-bold text-lg">✏️ แก้ไขข้อมูลผู้ใช้งาน</h3><button onClick={() => setEditingUser(null)} className="p-1 hover:bg-white/20 rounded-full transition">✕</button></div>
                         <form onSubmit={handleUpdateUser} className="p-6 space-y-4">
-                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">ชื่อ-นามสกุล</label><input value={editingUser.full_name || ''} onChange={e => setEditingUser({...editingUser, full_name: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none" required /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">ชื่อ-นามสกุล</label><input value={editingUser.full_name || editingUser.student_name || ''} onChange={e => setEditingUser({...editingUser, full_name: e.target.value, student_name: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none" required /></div>
                             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Login Code</label><input value={editingUser.login_code || ''} onChange={e => setEditingUser({...editingUser, login_code: e.target.value})} placeholder="1234" className="w-full p-2.5 border border-yellow-200 bg-yellow-50 rounded-xl font-mono text-center tracking-widest text-lg font-bold text-yellow-700" /></div>
-                            {editingUser.role === 'student' && (<>
+                            {userType === 'student' && (<>
                                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Student ID</label><input value={editingUser.student_id || ''} onChange={e => setEditingUser({...editingUser, student_id: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50" required /></div>
                                 <div className="flex gap-3"><div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">ชั้น</label><input value={editingUser.grade || ''} onChange={e => setEditingUser({...editingUser, grade: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl" /></div><div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">ห้อง</label><input value={editingUser.classroom || ''} onChange={e => setEditingUser({...editingUser, classroom: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl" /></div></div>
                             </>)}
-                            {editingUser.role === 'teacher' && (
+                            {userType === 'teacher' && (
                                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">LINE User ID</label><input value={editingUser.line_user_id || ''} onChange={e => setEditingUser({...editingUser, line_user_id: e.target.value})} className="w-full p-2.5 border border-green-200 rounded-xl bg-green-50 text-green-700 font-mono text-xs" placeholder="Uxxxxxxxx..." /></div>
                             )}
                             <div className="flex gap-3 pt-4"><button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-3 text-slate-600 bg-slate-100 rounded-xl font-bold hover:bg-slate-200 transition">ยกเลิก</button><button type="submit" className="flex-1 py-3 text-white bg-purple-600 rounded-xl font-bold shadow-lg shadow-purple-200 hover:bg-purple-700 transition">บันทึก</button></div>

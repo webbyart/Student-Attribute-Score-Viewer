@@ -2,7 +2,6 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { User, Role } from '../types';
 import { loginStudent } from '../services/api';
-import { supabase } from '../lib/supabaseClient';
 
 interface AuthContextType {
   user: User | null;
@@ -14,48 +13,19 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [user, setUser] = useState<User | null>(() => {
+      const stored = sessionStorage.getItem('studentUser');
+      return stored ? JSON.parse(stored) : null;
+  });
+  const [loading, setLoading] = useState<boolean>(false);
 
-  // Check for existing session
   useEffect(() => {
-    const checkUser = async () => {
-        try {
-            const { data: { session }, error } = await supabase.auth.getSession();
-            if (error) throw error;
-            
-            if (session) {
-                // Fetch profile
-                 const { data: profile, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .single();
-                
-                if (profileError) {
-                    // If profile fetch fails but session exists, ignore (might be teacher or partial auth)
-                    console.warn("Profile fetch failed:", profileError);
-                } else if (profile && profile.role === 'student') {
-                    setUser({
-                        id: profile.id,
-                        student_id: profile.student_id,
-                        name: profile.full_name,
-                        email: profile.email,
-                        profileImageUrl: profile.avatar_url,
-                        class: `ชั้น ${profile.grade}/${profile.classroom}`,
-                        role: Role.STUDENT,
-                    });
-                }
-            }
-        } catch (error: any) {
-            console.error("Auth session check failed (Network or Config Error):", error.message || error);
-            // We swallow the error here to allow the app to render the login page instead of crashing
-        } finally {
-            setLoading(false);
-        }
-    };
-    checkUser();
-  }, []);
+    if (user) {
+        sessionStorage.setItem('studentUser', JSON.stringify(user));
+    } else {
+        sessionStorage.removeItem('studentUser');
+    }
+  }, [user]);
 
   const login = async (id: string, email: string, password?: string) => {
     setLoading(true);
@@ -77,18 +47,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     } catch (error) {
         setLoading(false);
-        throw error; // Re-throw to allow component to handle specific error message
+        throw error;
     }
     setLoading(false);
     return false;
   };
 
   const logout = async () => {
-    try {
-        await supabase.auth.signOut();
-    } catch (error) {
-        console.error("Sign out error:", error);
-    }
     setUser(null);
   };
 

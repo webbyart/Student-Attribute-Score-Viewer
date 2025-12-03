@@ -3,8 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CalendarView from '../components/ui/CalendarView';
 import { Task } from '../types';
-import { testDatabaseConnection, getAllTasks } from '../services/api';
-import { supabase } from '../lib/supabaseClient';
+import { getAllTasks } from '../services/api';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 import TaskDetailModal from '../components/ui/TaskDetailModal';
 import DayEventsModal from '../components/ui/DayEventsModal';
@@ -20,15 +19,6 @@ const PublicCalendarPage: React.FC = () => {
 
   useEffect(() => {
     fetchTasks();
-
-    // Real-time Subscription to keep calendar up-to-date
-    const channel = supabase.channel('public-tasks')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-            fetchTasks();
-        })
-        .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
   }, []);
 
   // Update selected tasks when date or tasks change

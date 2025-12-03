@@ -4,7 +4,6 @@ import { StudentData, Task, TaskCategoryLabel } from '../../types';
 import { getStudentDataById } from '../../services/api';
 import FileChip from './FileChip';
 import LoadingSpinner from './LoadingSpinner';
-import { supabase } from '../../lib/supabaseClient';
 
 interface StudentDetailModalProps {
   studentId: string; // The "std001" ID
@@ -23,27 +22,6 @@ const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentId, onCl
 
   useEffect(() => {
     fetchData();
-
-    // Subscribe to task updates (e.g., new assignments)
-    const taskChannel = supabase.channel(`student-tasks-${studentId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-             // We refresh for any task change. Optimization: could filter by grade/class
-             fetchData();
-        })
-        .subscribe();
-    
-    // Subscribe to status updates (e.g., student marks done)
-    // Note: We listen to all status changes and rely on fetchData to get the right ones.
-    const statusChannel = supabase.channel(`student-status-${studentId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'student_task_status' }, () => {
-             fetchData();
-        })
-        .subscribe();
-
-    return () => { 
-        supabase.removeChannel(taskChannel);
-        supabase.removeChannel(statusChannel);
-    };
   }, [studentId]);
 
   if (!studentId) return null;
