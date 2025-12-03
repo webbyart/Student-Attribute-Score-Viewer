@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Card from '../../components/ui/Card';
 import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
@@ -10,6 +11,10 @@ const StudentDashboardPage: React.FC = () => {
   const [localTasks, setLocalTasks] = useState<Task[]>(contextData.tasks);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<'All' | TaskCategory>('All');
+  
+  // Local state for read notifications to update UI instantly without full refresh
+  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -24,12 +29,12 @@ const StudentDashboardPage: React.FC = () => {
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 3); // Show only top 3
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  // Calculate unread count filtering out locally read IDs
+  const unreadCount = notifications.filter(n => !n.is_read && !readNotificationIds.has(n.id)).length;
 
   // Notification Filter Logic
   const filteredNotifications = notifications.filter(n => {
       if (notificationFilter === 'All') return true;
-      // We need to find the task associated with the notification to check category
       const associatedTask = contextData.tasks.find(t => t.id === n.task_id);
       return associatedTask?.category === notificationFilter;
   });
@@ -45,6 +50,7 @@ const StudentDashboardPage: React.FC = () => {
   
   const handleMarkAsRead = (nId: string) => {
       markNotificationRead(nId);
+      setReadNotificationIds(prev => new Set(prev).add(nId));
   }
 
   const handleToggleTask = async (task: Task) => {
@@ -120,24 +126,34 @@ const StudentDashboardPage: React.FC = () => {
                             <h3 className="font-bold text-purple-800 text-sm">การแจ้งเตือน</h3>
                             <button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-slate-600">✕</button>
                         </div>
-                        {/* Filter Bar */}
-                        <div className="flex gap-2 p-2 overflow-x-auto border-b border-slate-50 no-scrollbar">
-                            <button onClick={() => setNotificationFilter('All')} className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap transition ${notificationFilter === 'All' ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>ทั้งหมด</button>
-                            {Object.values(TaskCategory).map(cat => (
-                                <button key={cat} onClick={() => setNotificationFilter(cat)} className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap transition ${notificationFilter === cat ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{TaskCategoryLabel[cat]}</button>
-                            ))}
+                        
+                        {/* Filter Dropdown */}
+                        <div className="p-2 border-b border-slate-50 bg-slate-50/50">
+                            <select 
+                                value={notificationFilter} 
+                                onChange={(e) => setNotificationFilter(e.target.value as any)}
+                                className="w-full p-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-400 text-slate-600 bg-white"
+                            >
+                                <option value="All">ทั้งหมด</option>
+                                {Object.values(TaskCategory).map(cat => (
+                                    <option key={cat} value={cat}>{TaskCategoryLabel[cat]}</option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="max-h-60 overflow-y-auto">
-                            {filteredNotifications.length > 0 ? filteredNotifications.map(n => (
-                                <div key={n.id} onClick={() => handleMarkAsRead(n.id)} className={`p-3 border-b border-slate-50 text-sm cursor-pointer hover:bg-slate-50 ${n.is_read ? 'bg-white opacity-60' : 'bg-blue-50'}`}>
-                                    <p className="text-slate-800 font-medium text-xs leading-snug">{n.message}</p>
-                                    <p className="text-[10px] text-slate-400 mt-1 flex justify-between">
-                                        <span>{new Date(n.created_at).toLocaleDateString('th-TH', { hour: '2-digit', minute:'2-digit' })}</span>
-                                        {!n.is_read && <span className="text-blue-500 font-bold">• ใหม่</span>}
-                                    </p>
-                                </div>
-                            )) : (
+                            {filteredNotifications.length > 0 ? filteredNotifications.map(n => {
+                                const isRead = n.is_read || readNotificationIds.has(n.id);
+                                return (
+                                    <div key={n.id} onClick={() => handleMarkAsRead(n.id)} className={`p-3 border-b border-slate-50 text-sm cursor-pointer hover:bg-slate-50 transition-colors ${isRead ? 'bg-white opacity-60' : 'bg-blue-50'}`}>
+                                        <p className="text-slate-800 font-medium text-xs leading-snug">{n.message}</p>
+                                        <p className="text-[10px] text-slate-400 mt-1 flex justify-between">
+                                            <span>{new Date(n.created_at).toLocaleDateString('th-TH', { hour: '2-digit', minute:'2-digit' })}</span>
+                                            {!isRead && <span className="text-blue-500 font-bold">• ใหม่</span>}
+                                        </p>
+                                    </div>
+                                );
+                            }) : (
                                 <div className="p-8 text-center text-slate-400 text-xs flex flex-col items-center">
                                     <span className="text-2xl mb-1">🔕</span>
                                     ไม่มีการแจ้งเตือนในหมวดนี้
@@ -150,8 +166,8 @@ const StudentDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Progress Card */}
-      <Card className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white border-none shadow-xl shadow-indigo-200/50 relative overflow-hidden">
+      {/* Progress Card - Enhanced UI */}
+      <Card className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white border-none shadow-lg shadow-indigo-200/50 relative overflow-hidden transform transition-all hover:scale-[1.01]">
           <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
           <div className="relative z-10">
             <div className="flex justify-between items-end mb-3">
@@ -162,7 +178,7 @@ const StudentDashboardPage: React.FC = () => {
                 <div className="text-4xl font-black tracking-tight">{progressPercentage}%</div>
             </div>
             <div className="w-full bg-black/20 rounded-full h-3 backdrop-blur-sm">
-                <div className="bg-white h-3 rounded-full transition-all duration-700 ease-out shadow-[0_0_10px_rgba(255,255,255,0.5)]" style={{ width: `${progressPercentage}%` }}></div>
+                <div className="bg-white h-3 rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(255,255,255,0.5)]" style={{ width: `${progressPercentage}%` }}></div>
             </div>
           </div>
       </Card>
@@ -195,11 +211,11 @@ const StudentDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Upcoming Tasks Feed */}
+      {/* Upcoming Tasks Feed - Enhanced UI */}
       <div>
         <div className="flex justify-between items-center mb-3">
              <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
-                ⏳ งานที่ต้องทำ (เร็วๆ นี้)
+                ⏳ งานที่ต้องทำเร็วๆ นี้
              </h2>
              <span className="text-xs font-bold text-purple-600 cursor-pointer bg-purple-50 px-2 py-1 rounded-lg hover:bg-purple-100 transition" onClick={() => navigate('schedule')}>ดูทั้งหมด →</span>
         </div>
@@ -211,19 +227,27 @@ const StudentDashboardPage: React.FC = () => {
                     if(task.priority === 'High') priorityBadge = <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-bold border border-red-200">High</span>
                     
                     const isUrgent = new Date(task.dueDate).getTime() - new Date().getTime() < 86400000;
+                    
+                    // Visual Indicator: Red for Urgent, Green for done (though this list is usually pending), Gray for normal
+                    const statusColor = isUrgent ? 'bg-red-500' : 'bg-slate-300';
 
                     return (
-                        <div key={task.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center group hover:shadow-md transition-all">
-                            <div className="flex-1 min-w-0 mr-3">
-                                <div className="flex items-center gap-2 mb-1.5">
-                                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold">{TaskCategoryLabel[task.category]}</span>
-                                    {priorityBadge}
-                                    {isUrgent && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500 text-white font-bold animate-pulse">ด่วน</span>
-                                    )}
+                        <div key={task.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center group hover:shadow-md transition-all hover:border-purple-200">
+                            <div className="flex items-start gap-3 flex-1 min-w-0 mr-3">
+                                {/* Indicator Dot */}
+                                <div className={`w-2.5 h-2.5 rounded-full ${statusColor} mt-1.5 shrink-0 ${isUrgent ? 'animate-pulse' : ''}`} />
+                                
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold">{TaskCategoryLabel[task.category]}</span>
+                                        {priorityBadge}
+                                        {isUrgent && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500 text-white font-bold animate-pulse">ด่วน</span>
+                                        )}
+                                    </div>
+                                    <h3 className="font-bold text-slate-800 text-sm truncate">{task.title}</h3>
+                                    <p className="text-xs text-slate-500 truncate">{task.subject}</p>
                                 </div>
-                                <h3 className="font-bold text-slate-800 text-sm truncate">{task.title}</h3>
-                                <p className="text-xs text-slate-500 truncate">{task.subject}</p>
                             </div>
                             <div className="flex items-center gap-3 shrink-0">
                                  <div className="text-right">
@@ -232,9 +256,9 @@ const StudentDashboardPage: React.FC = () => {
                                  </div>
                                  <button 
                                     onClick={() => handleToggleTask(task)}
-                                    className="w-10 h-10 rounded-full border-2 border-slate-200 flex items-center justify-center hover:bg-green-50 hover:border-green-500 hover:text-green-500 transition-all text-transparent"
+                                    className="w-10 h-10 rounded-full border-2 border-slate-200 flex items-center justify-center hover:bg-green-50 hover:border-green-500 hover:text-green-500 transition-all group-hover:border-slate-300"
                                  >
-                                     <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                                     <svg className="w-5 h-5 text-slate-300 group-hover:text-slate-400 hover:!text-green-500" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                                  </button>
                              </div>
                         </div>

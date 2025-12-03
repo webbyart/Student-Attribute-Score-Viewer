@@ -1,3 +1,4 @@
+
 import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Role, TimetableEntry, SystemSettings, TaskCategoryLabel } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
@@ -300,8 +301,16 @@ export const saveSystemSettings = async (settings: Record<string, string>): Prom
 
 // --- LINE Integration ---
 
+// Utility to ensure text is never empty string (causes LINE API error)
+const safeStr = (str: string | undefined | null): string => {
+    if (!str || str.trim() === '') return '-';
+    return str.trim();
+}
+
 // Helper to generate a beautiful Flex Message from a Timetable
 export const generateTimetableFlexMessage = (grade: string, classroom: string, timetable: TimetableEntry[]) => {
+    const safeTimetable = Array.isArray(timetable) ? timetable : [];
+    
     // Group by Day
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const dayMap: Record<string, string> = { 'Monday': 'จันทร์', 'Tuesday': 'อังคาร', 'Wednesday': 'พุธ', 'Thursday': 'พฤหัส', 'Friday': 'ศุกร์' };
@@ -310,7 +319,7 @@ export const generateTimetableFlexMessage = (grade: string, classroom: string, t
     const grouped: Record<string, TimetableEntry[]> = {};
     days.forEach(d => grouped[d] = []);
     
-    timetable.forEach(t => {
+    safeTimetable.forEach(t => {
         if (grouped[t.day_of_week]) {
             grouped[t.day_of_week].push(t);
         }
@@ -324,9 +333,9 @@ export const generateTimetableFlexMessage = (grade: string, classroom: string, t
             type: "box",
             layout: "horizontal",
             contents: [
-                { type: "text", text: e.period_time, size: "xs", color: "#6B7280", flex: 3 },
-                { type: "text", text: e.subject || "-", size: "xs", color: "#1F2937", flex: 5, weight: "bold", wrap: true },
-                { type: "text", text: e.room || '-', size: "xs", color: "#6B7280", flex: 2, align: "end" }
+                { type: "text", text: safeStr(e.period_time), size: "xs", color: "#6B7280", flex: 3 },
+                { type: "text", text: safeStr(e.subject), size: "xs", color: "#1F2937", flex: 5, weight: "bold", wrap: true },
+                { type: "text", text: safeStr(e.room), size: "xs", color: "#6B7280", flex: 2, align: "end" }
             ],
             margin: "sm"
         }));
@@ -366,7 +375,7 @@ export const generateTimetableFlexMessage = (grade: string, classroom: string, t
 
     return {
         type: 'flex',
-        altText: `ตารางเรียนชั้น ${grade}/${classroom}`,
+        altText: `ตารางเรียนชั้น ${safeStr(grade)}/${safeStr(classroom)}`,
         contents: {
             type: "bubble",
             size: "mega",
@@ -376,7 +385,7 @@ export const generateTimetableFlexMessage = (grade: string, classroom: string, t
                 backgroundColor: "#4F46E5",
                 contents: [
                     { type: "text", text: "📅 ตารางเรียน", color: "#FFFFFF", weight: "bold", size: "sm", opacity: "0.8" },
-                    { type: "text", text: `ระดับชั้น ${grade}/${classroom}`, color: "#FFFFFF", weight: "bold", size: "xl", margin: "sm" }
+                    { type: "text", text: `ระดับชั้น ${safeStr(grade)}/${safeStr(classroom)}`, color: "#FFFFFF", weight: "bold", size: "xl", margin: "sm" }
                 ],
                 paddingAll: "20px"
             },
@@ -445,12 +454,16 @@ export const generateTaskFlexMessage = (task: Task) => {
         });
     };
     const formatTime = (dateString: string) => {
-        if (!dateString) return '-'; // FIX: Return hyphen instead of empty string
+        if (!dateString) return '-';
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
-        return date.toLocaleTimeString('th-TH', { 
-            hour: '2-digit', minute: '2-digit' 
-        }) + ' น.';
+        try {
+            return date.toLocaleTimeString('th-TH', { 
+                hour: '2-digit', minute: '2-digit' 
+            }) + ' น.';
+        } catch (e) {
+            return date.toTimeString().slice(0, 5);
+        }
     };
 
     const createdDate = formatDate(task.createdAt || new Date().toISOString());
@@ -463,9 +476,10 @@ export const generateTaskFlexMessage = (task: Task) => {
     else if (task.targetGrade && task.targetClassroom) targetText = `ชั้น ${task.targetGrade}/${task.targetClassroom}`;
     else if (task.targetGrade) targetText = `ระดับชั้น ${task.targetGrade}`;
 
-    // 4. Attachments Display Logic
-    const hasAttachments = task.attachments && task.attachments.length > 0;
-    const attachmentContents = hasAttachments ? [
+    // 4. Attachments Display Logic - validate URLs
+    const safeAttachments = Array.isArray(task.attachments) ? task.attachments.filter(url => url && url.startsWith('http')) : [];
+    
+    const attachmentContents = safeAttachments.length > 0 ? [
         {
             type: "separator",
             margin: "md",
@@ -478,13 +492,13 @@ export const generateTaskFlexMessage = (task: Task) => {
             color: "#9CA3AF",
             margin: "md"
         },
-        ...task.attachments.slice(0, 3).map(url => ({
+        ...safeAttachments.slice(0, 3).map(url => ({
             type: "text",
-            text: `📎 ${url.split('/').pop()?.split('?')[0] || 'Download'}`,
+            text: `📎 ${safeStr(url.split('/').pop()?.split('?')[0] || 'Download')}`,
             size: "xxs",
             color: "#3B82F6",
             wrap: true,
-            action: { type: "uri", uri: url },
+            action: { type: "uri", uri: encodeURI(url) }, // Ensure URL is encoded
             margin: "sm"
         }))
     ] : [];
@@ -492,10 +506,10 @@ export const generateTaskFlexMessage = (task: Task) => {
     // 5. Build Flex Message Structure
     return {
         type: 'flex',
-        altText: `แจ้งเตือน: ${task.title || 'งานใหม่'}`,
+        altText: safeStr(`แจ้งเตือน: ${task.title || 'งานใหม่'}`).substring(0, 400),
         contents: {
             type: "bubble",
-            size: "mega", // FIX: Use 'mega' instead of 'giga' to avoid validation errors on some clients
+            size: "mega", 
             header: {
                 type: "box",
                 layout: "vertical",
@@ -504,16 +518,15 @@ export const generateTaskFlexMessage = (task: Task) => {
                 contents: [
                     {
                         type: "text",
-                        text: categoryText,
+                        text: safeStr(categoryText),
                         color: "#FFFFFF",
                         weight: "bold",
                         size: "xs",
-                        textDecoration: "none",
                         align: "start"
                     },
                     {
                         type: "text",
-                        text: task.title || "ไม่มีหัวข้อ",
+                        text: safeStr(task.title),
                         weight: "bold",
                         size: "xl",
                         color: "#FFFFFF",
@@ -536,7 +549,7 @@ export const generateTaskFlexMessage = (task: Task) => {
                                 layout: "vertical",
                                 contents: [
                                     { type: "text", text: "รายวิชา", size: "xxs", color: "#9CA3AF" },
-                                    { type: "text", text: task.subject || "-", size: "sm", color: "#1F2937", weight: "bold", wrap: true }
+                                    { type: "text", text: safeStr(task.subject), size: "sm", color: "#1F2937", weight: "bold", wrap: true }
                                 ],
                                 flex: 1
                             },
@@ -545,7 +558,7 @@ export const generateTaskFlexMessage = (task: Task) => {
                                 layout: "vertical",
                                 contents: [
                                     { type: "text", text: "ผู้แจ้ง", size: "xxs", color: "#9CA3AF" },
-                                    { type: "text", text: task.createdBy || "Admin", size: "sm", color: "#1F2937", wrap: true }
+                                    { type: "text", text: safeStr(task.createdBy || "Admin"), size: "sm", color: "#1F2937", wrap: true }
                                 ],
                                 flex: 1
                             }
@@ -564,7 +577,7 @@ export const generateTaskFlexMessage = (task: Task) => {
                                 layout: "vertical",
                                 contents: [
                                     { type: "text", text: "วันที่สร้าง", size: "xxs", color: "#9CA3AF" },
-                                    { type: "text", text: createdDate, size: "sm", color: "#4B5563" }
+                                    { type: "text", text: safeStr(createdDate), size: "sm", color: "#4B5563" }
                                 ],
                                 flex: 1
                             },
@@ -573,8 +586,8 @@ export const generateTaskFlexMessage = (task: Task) => {
                                 layout: "vertical",
                                 contents: [
                                     { type: "text", text: "กำหนดส่ง", size: "xxs", color: "#EF4444" },
-                                    { type: "text", text: `${dueDate}`, size: "sm", color: "#EF4444", weight: "bold" },
-                                    { type: "text", text: dueTime, size: "xs", color: "#EF4444" }
+                                    { type: "text", text: safeStr(dueDate), size: "sm", color: "#EF4444", weight: "bold" },
+                                    { type: "text", text: safeStr(dueTime), size: "xs", color: "#EF4444" }
                                 ],
                                 flex: 1
                             }
@@ -589,7 +602,7 @@ export const generateTaskFlexMessage = (task: Task) => {
                         contents: [
                             {
                                 type: "text",
-                                text: `สำหรับ: ${targetText}`,
+                                text: `สำหรับ: ${safeStr(targetText)}`,
                                 size: "xs",
                                 color: "#6B7280",
                                 weight: "bold",
@@ -597,7 +610,7 @@ export const generateTaskFlexMessage = (task: Task) => {
                             },
                             {
                                 type: "text",
-                                text: task.description || "-",
+                                text: safeStr(task.description),
                                 size: "sm",
                                 color: "#374151",
                                 wrap: true,
@@ -685,8 +698,9 @@ export const testLineNotification = async (token: string, userId: string, messag
         if (response.ok) {
             return { success: true, message: 'ส่งข้อความสำเร็จ!' };
         } else {
-            const errorData = await response.json();
-            return { success: false, message: `ส่งไม่สำเร็จ (API Error): ${errorData.message || response.statusText}` };
+            const errorData = await response.json().catch(() => ({ message: response.statusText }));
+            console.error("LINE API Error Details:", JSON.stringify(errorData, null, 2));
+            return { success: false, message: `ส่งไม่สำเร็จ (API Error): ${errorData.message || 'Unknown Error'} (ดู Console เพื่อดูรายละเอียด)` };
         }
     } catch (e: any) {
         console.warn("LINE API Network Error:", e);
@@ -959,6 +973,11 @@ export const getStudentDataById = async (studentId: string): Promise<StudentData
         attributes: [], 
         scores: []      
     };
+};
+
+export const getAllStudentTaskStatuses = async () => {
+    const { data: statuses } = await supabase.from('student_task_status').select('student_id, is_completed');
+    return statuses || [];
 };
 
 export const toggleTaskStatus = async (studentId: string, taskId: string, isCompleted: boolean): Promise<boolean> => {

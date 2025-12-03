@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import Card from '../../components/ui/Card';
 import { 
@@ -17,7 +18,8 @@ import {
     bulkRegisterStudents,
     registerTeacher,
     getTimetable,
-    generateTimetableFlexMessage
+    generateTimetableFlexMessage,
+    getAllStudentTaskStatuses
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor, TimetableEntry } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
@@ -31,6 +33,7 @@ import DayEventsModal from '../../components/ui/DayEventsModal';
 import TaskDetailModal from '../../components/ui/TaskDetailModal';
 import TimetableGrid from '../../components/ui/TimetableGrid';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import ProgressBar from '../../components/ui/ProgressBar';
 
 const TeacherDashboardPage: React.FC = () => {
     const { teacher } = useTeacherAuth();
@@ -68,8 +71,8 @@ const TeacherDashboardPage: React.FC = () => {
 
     // Task Filter State
     const [taskSearch, setTaskSearch] = useState('');
-    const [filterGrade, setFilterGrade] = useState('All');
-    const [filterClassroom, setFilterClassroom] = useState('All');
+    const [filterGrade, setFilterGrade] = useState('ม.3');
+    const [filterClassroom, setFilterClassroom] = useState('3');
     const [filterType, setFilterType] = useState('All');
 
     // Form State
@@ -80,8 +83,8 @@ const TeacherDashboardPage: React.FC = () => {
         dueDate: '',
         category: TaskCategory.CLASS_SCHEDULE,
         priority: 'Medium',
-        targetGrade: 'ม.4',
-        targetClassroom: '2',
+        targetGrade: 'ม.3',
+        targetClassroom: '3',
         targetStudentId: ''
     });
     const [files, setFiles] = useState<File[]>([]);
@@ -92,8 +95,8 @@ const TeacherDashboardPage: React.FC = () => {
     const [message, setMessage] = useState('');
 
     // Schedule State
-    const [scheduleGrade, setScheduleGrade] = useState('ม.4');
-    const [scheduleClassroom, setScheduleClassroom] = useState('1');
+    const [scheduleGrade, setScheduleGrade] = useState('ม.3');
+    const [scheduleClassroom, setScheduleClassroom] = useState('3');
     const [scheduleData, setScheduleData] = useState<TimetableEntry[]>([]);
     const [scheduleLoading, setScheduleLoading] = useState(false);
     const [isConfirmSendScheduleOpen, setIsConfirmSendScheduleOpen] = useState(false);
@@ -142,7 +145,35 @@ const TeacherDashboardPage: React.FC = () => {
 
     const loadUsers = async () => {
         const fetchedUsers = await getProfiles(userType);
-        setUsers(fetchedUsers);
+        
+        if (userType === 'student') {
+            // Fetch task stats for students
+            const allTasks = await getAllTasks();
+            const allStatuses = await getAllStudentTaskStatuses();
+            
+            const usersWithStats = fetchedUsers.map(u => {
+                // Calculate total relevant tasks for this student
+                const studentTasks = allTasks.filter(t => 
+                    (t.targetGrade === u.grade && t.targetClassroom === u.classroom) || 
+                    t.targetStudentId === u.student_id ||
+                    (!t.targetGrade && !t.targetStudentId) // Global tasks
+                );
+                
+                // Calculate completed tasks
+                const completedCount = allStatuses.filter((s: any) => 
+                    s.student_id === u.id && s.is_completed
+                ).length;
+
+                return {
+                    ...u,
+                    totalTasks: studentTasks.length,
+                    completedTasks: completedCount
+                };
+            });
+            setUsers(usersWithStats);
+        } else {
+            setUsers(fetchedUsers);
+        }
     }
 
     const loadSchedule = async () => {
@@ -198,8 +229,8 @@ const TeacherDashboardPage: React.FC = () => {
             dueDate: new Date(Date.now() + 86400000).toISOString(),
             category: TaskCategory.HOMEWORK,
             priority: 'High',
-            targetGrade: 'ม.4',
-            targetClassroom: '2',
+            targetGrade: 'ม.3',
+            targetClassroom: '3',
             createdBy: teacher?.name || 'Admin',
             createdAt: new Date().toISOString()
         };
@@ -259,8 +290,8 @@ const TeacherDashboardPage: React.FC = () => {
             dueDate: '',
             category: TaskCategory.CLASS_SCHEDULE,
             priority: 'Medium',
-            targetGrade: 'ม.4',
-            targetClassroom: '2',
+            targetGrade: 'ม.3',
+            targetClassroom: '3',
             targetStudentId: ''
         });
         setExistingAttachments([]);
@@ -320,7 +351,7 @@ const TeacherDashboardPage: React.FC = () => {
                 if (result.success) {
                     setMessage('บันทึกข้อมูลสำเร็จ');
                     
-                    // --- Auto Send LINE Notification ---
+                    // --- Auto Send LINE Notification (ALWAYS for new tasks if Group ID set) ---
                     if (testGroupId) {
                         const fullTask: Task = {
                             id: result.data?.id || 'temp',
@@ -330,8 +361,9 @@ const TeacherDashboardPage: React.FC = () => {
                             isCompleted: false
                         };
                         
+                        // Send notification regardless of priority as per user request
                         sendLineNotification(testGroupId, fullTask)
-                            .then(() => setMessage('บันทึกข้อมูลและส่งแจ้งเตือน LINE แล้ว ✅'))
+                            .then(() => setMessage('บันทึกข้อมูลและส่งแจ้งเตือนไปยังกลุ่ม LINE แล้ว ✅'))
                             .catch(err => console.error("Auto LINE notification failed:", err));
                     }
 
@@ -469,7 +501,7 @@ const TeacherDashboardPage: React.FC = () => {
         const result = await testLineNotification(lineToken, testGroupId, scheduleFlexMessage);
         setIsSendingTest(false);
         
-        if(result.success) alert(`ส่งตารางเรียนชั้น ${scheduleGrade}/${scheduleClassroom} เรียบร้อยแล้ว`);
+        if(result.success) alert(`ส่งตารางเรียนชั้น ${scheduleGrade}/${scheduleClassroom} ไปยังกลุ่มเรียบร้อยแล้ว`);
         else alert('เกิดข้อผิดพลาด: ' + result.message);
     };
 
@@ -661,11 +693,11 @@ const TeacherDashboardPage: React.FC = () => {
                                 <div className="grid grid-cols-3 gap-3 mb-2">
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">ระดับชั้น</label>
-                                        <input name="targetGrade" value={formData.targetGrade} onChange={handleChange} className="w-full p-2 border rounded-lg text-sm" required placeholder="ม.4" />
+                                        <input name="targetGrade" value={formData.targetGrade} onChange={handleChange} className="w-full p-2 border rounded-lg text-sm bg-slate-100 text-slate-500" required placeholder="ม.3" readOnly />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">ห้อง</label>
-                                        <input name="targetClassroom" value={formData.targetClassroom} onChange={handleChange} className="w-full p-2 border rounded-lg text-sm" required placeholder="2" />
+                                        <input name="targetClassroom" value={formData.targetClassroom} onChange={handleChange} className="w-full p-2 border rounded-lg text-sm bg-slate-100 text-slate-500" required placeholder="3" readOnly />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">รหัสบุคคล</label>
@@ -707,7 +739,7 @@ const TeacherDashboardPage: React.FC = () => {
                                 {message && <p className={`text-center mt-3 text-sm font-medium ${message.includes('ผิดพลาด') ? 'text-red-500' : 'text-green-600'}`}>{message}</p>}
                                 {!editingTaskId && testGroupId && (
                                     <p className="text-[10px] text-center text-slate-400 mt-1">
-                                        * ระบบจะส่งแจ้งเตือนไปที่ LINE Group ID: {testGroupId} โดยอัตโนมัติ
+                                        * ระบบจะส่งแจ้งเตือนไปที่ LINE Group ID โดยอัตโนมัติเมื่อโพสต์งานสำเร็จ
                                     </p>
                                 )}
                             </div>
@@ -717,6 +749,7 @@ const TeacherDashboardPage: React.FC = () => {
 
                 {activeTab === 'history' && (
                     <div className="space-y-4 animate-fade-in">
+                        {/* ... (History content preserved) ... */}
                         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3 sticky top-0 z-10">
                             <div className="relative">
                                 <input 
@@ -726,8 +759,14 @@ const TeacherDashboardPage: React.FC = () => {
                                 <svg className="w-5 h-5 text-slate-400 absolute left-3 top-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                             </div>
                             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                                <select value={filterGrade} onChange={(e) => setFilterGrade(e.target.value)} className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-full bg-white focus:outline-none text-slate-600"><option value="All">ทุกชั้น</option><option value="ม.4">ม.4</option><option value="ม.5">ม.5</option><option value="ม.6">ม.6</option></select>
-                                <select value={filterClassroom} onChange={(e) => setFilterClassroom(e.target.value)} className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-full bg-white focus:outline-none text-slate-600"><option value="All">ทุกห้อง</option><option value="1">ห้อง 1</option><option value="2">ห้อง 2</option></select>
+                                <select value={filterGrade} onChange={(e) => setFilterGrade(e.target.value)} className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-full bg-white focus:outline-none text-slate-600">
+                                    <option value="All">ทุกชั้น</option>
+                                    <option value="ม.3">ม.3</option>
+                                </select>
+                                <select value={filterClassroom} onChange={(e) => setFilterClassroom(e.target.value)} className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-full bg-white focus:outline-none text-slate-600">
+                                    <option value="All">ทุกห้อง</option>
+                                    <option value="3">ห้อง 3</option>
+                                </select>
                                 <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-full bg-white focus:outline-none text-slate-600"><option value="All">ทุกประเภท</option><option value="Group">รายห้อง</option><option value="Individual">รายบุคคล</option></select>
                             </div>
                         </div>
@@ -792,6 +831,7 @@ const TeacherDashboardPage: React.FC = () => {
 
                 {activeTab === 'users' && (
                     <div className="space-y-4 animate-fade-in">
+                        {/* ... (User management content preserved) ... */}
                         <div className="flex gap-2 mb-4 bg-white p-1 rounded-xl shadow-sm border border-slate-100">
                             <button onClick={() => setUserType('student')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${userType === 'student' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>นักเรียน</button>
                             <button onClick={() => setUserType('teacher')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${userType === 'teacher' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>ครู/บุคลากร</button>
@@ -840,17 +880,27 @@ const TeacherDashboardPage: React.FC = () => {
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-100">
-                                    <tr><th className="p-4">ชื่อ-นามสกุล</th>{userType === 'student' && <th className="p-4">ข้อมูล</th>}<th className="p-4 text-right">จัดการ</th></tr>
+                                    <tr>
+                                        <th className="p-4">ชื่อ-นามสกุล</th>
+                                        {userType === 'student' && <th className="p-4">ข้อมูล</th>}
+                                        {userType === 'student' && <th className="p-4">ความคืบหน้า</th>}
+                                        <th className="p-4 text-right">จัดการ</th>
+                                    </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
                                     {filteredUsers.map(user => (
                                         <tr key={user.id} className="hover:bg-purple-50/30 transition">
                                             <td className="p-4"><div className="font-bold text-slate-800">{user.full_name}</div><div className="text-xs text-slate-400 font-mono mt-0.5">{user.login_code ? `Code: ${user.login_code}` : (userType === 'teacher' ? user.email : 'No Code')}</div></td>
                                             {userType === 'student' && <td className="p-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold mr-1">{user.student_id}</span><span className="text-xs text-slate-500">{user.grade}/{user.classroom}</span></td>}
+                                            {userType === 'student' && (
+                                                <td className="p-4 w-32">
+                                                    <ProgressBar value={user.completedTasks || 0} max={user.totalTasks || 0} showLabel={true} />
+                                                </td>
+                                            )}
                                             <td className="p-4 text-right"><div className="flex justify-end gap-2">{userType === 'student' && <button onClick={() => setViewingStudentId(user.student_id)} className="text-xs font-bold text-white bg-indigo-500 px-3 py-1.5 rounded-lg hover:bg-indigo-600 transition shadow-sm">ดูข้อมูล</button>}<button onClick={() => setEditingUser(user)} className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg hover:bg-purple-100 transition border border-purple-100">แก้ไข</button></div></td>
                                         </tr>
                                     ))}
-                                    {filteredUsers.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400 italic">ไม่พบข้อมูลผู้ใช้งาน</td></tr>}
+                                    {filteredUsers.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400 italic">ไม่พบข้อมูลผู้ใช้งาน</td></tr>}
                                 </tbody>
                             </table>
                         </div>
@@ -859,6 +909,7 @@ const TeacherDashboardPage: React.FC = () => {
 
                 {activeTab === 'settings' && (
                      <div className="space-y-4 animate-fade-in pb-12">
+                        {/* ... (Settings content preserved) ... */}
                         <Card>
                             <div className="flex items-center gap-3 mb-6">
                                 <div className="p-3 bg-green-100 text-green-600 rounded-full">
@@ -898,15 +949,24 @@ const TeacherDashboardPage: React.FC = () => {
                                 
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-2">LINE Group ID (สำหรับการแจ้งเตือนอัตโนมัติ)</label>
-                                    <input 
-                                        type="text"
-                                        value={testGroupId}
-                                        onChange={(e) => setTestGroupId(e.target.value)}
-                                        className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-green-200 focus:border-green-400 focus:outline-none transition"
-                                        placeholder="Cxxxxxxxx..."
-                                    />
+                                    <div className="flex gap-2">
+                                        <input 
+                                            type="text"
+                                            value={testGroupId}
+                                            onChange={(e) => setTestGroupId(e.target.value)}
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 font-mono text-xs focus:ring-2 focus:ring-green-200 focus:border-green-400 focus:outline-none transition"
+                                            placeholder="Cxxxxxxxx..."
+                                        />
+                                        <button
+                                            onClick={() => handleTestLine(testGroupId, 'Group')}
+                                            disabled={isSendingTest}
+                                            className="whitespace-nowrap px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold text-xs hover:bg-blue-100 transition border border-blue-200"
+                                        >
+                                            {isSendingTest ? '...' : 'ทดสอบส่ง'}
+                                        </button>
+                                    </div>
                                     <p className="text-xs text-slate-400 mt-2">
-                                        * หากระบุ ID นี้ ระบบจะส่งแจ้งเตือนเข้ากลุ่มอัตโนมัติเมื่อโพสต์งานใหม่
+                                        * หากระบุ ID นี้ ระบบจะส่งแจ้งเตือนเข้ากลุ่มอัตโนมัติเมื่อโพสต์งานใหม่ (ทุก Priority)
                                     </p>
                                 </div>
 
@@ -955,7 +1015,7 @@ const TeacherDashboardPage: React.FC = () => {
                                 )}
                             </div>
                         </Card>
-
+                        {/* ... (DB Health Check Card preserved) ... */}
                         <Card>
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="p-3 bg-indigo-100 text-indigo-600 rounded-full">
@@ -1027,7 +1087,7 @@ const TeacherDashboardPage: React.FC = () => {
                 )}
             </div>
 
-            {/* Bottom Nav */}
+            {/* Bottom Nav ... (Preserved) */}
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] px-4 py-2 pb-safe z-40 flex justify-between items-end">
                 <button onClick={() => setActiveTab('calendar')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'calendar' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}>
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -1062,6 +1122,8 @@ const TeacherDashboardPage: React.FC = () => {
                 message={`คุณต้องการส่งตารางเรียนของชั้น ${scheduleGrade}/${scheduleClassroom} ไปยังกลุ่มไลน์ใช่หรือไม่?`}
                 onConfirm={confirmSendSchedule}
                 onCancel={() => setIsConfirmSendScheduleOpen(false)}
+                confirmText="ส่งตารางเรียน"
+                variant="success"
             />
 
             <ConfirmModal 
@@ -1070,6 +1132,8 @@ const TeacherDashboardPage: React.FC = () => {
                 message="คุณแน่ใจหรือไม่ว่าต้องการลบภาระงานนี้? การกระทำนี้ไม่สามารถย้อนกลับได้"
                 onConfirm={confirmDeleteTask}
                 onCancel={() => setIsConfirmDeleteOpen(false)}
+                confirmText="ลบข้อมูล"
+                variant="danger"
             />
 
             {isDayModalOpen && selectedDate && (
@@ -1078,6 +1142,7 @@ const TeacherDashboardPage: React.FC = () => {
             {selectedTaskForModal && (
                 <TaskDetailModal task={selectedTaskForModal} onClose={() => setSelectedTaskForModal(null)} />
             )}
+            {/* ... (Editing User and Add User Modals preserved) ... */}
             {editingUser && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
@@ -1097,7 +1162,6 @@ const TeacherDashboardPage: React.FC = () => {
                     </div>
                 </div>
             )}
-            
             {/* Add User Modal */}
             {isAddUserModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">

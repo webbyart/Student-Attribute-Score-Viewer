@@ -63,17 +63,13 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({ grade, classroom, onGrade
                         onChange={(e) => onGradeChange(e.target.value)}
                         className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-200"
                     >
-                        <option value="ม.4">ม.4</option>
-                        <option value="ม.5">ม.5</option>
-                        <option value="ม.6">ม.6</option>
+                        <option value="ม.3">ม.3</option>
                     </select>
                     <select 
                         value={classroom} 
                         onChange={(e) => onClassroomChange(e.target.value)}
                         className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-200"
                     >
-                        <option value="1">ห้อง 1</option>
-                        <option value="2">ห้อง 2</option>
                         <option value="3">ห้อง 3</option>
                     </select>
                 </div>

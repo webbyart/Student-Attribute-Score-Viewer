@@ -9,8 +9,8 @@ const StudentRegisterPage: React.FC = () => {
       student_id: '',
       student_name: '',
       email: '',
-      grade: '',
-      classroom: '',
+      grade: 'ม.3',
+      classroom: '3',
       password: '',
       lineUserId: ''
   });
@@ -76,11 +76,11 @@ const StudentRegisterPage: React.FC = () => {
               />
               <div className="flex gap-2">
                  <input 
-                    name="grade" type="text" placeholder="ชั้น (เช่น ม.4)" value={formData.grade} onChange={handleChange}
+                    name="grade" type="text" placeholder="ชั้น (เช่น ม.3)" value={formData.grade} onChange={handleChange}
                     className="w-1/2 px-4 py-3 bg-white/70 border border-sky-200 rounded-xl focus:ring-2 focus:ring-sky-400 focus:outline-none" required
                 />
                  <input 
-                    name="classroom" type="text" placeholder="ห้อง (เช่น 2)" value={formData.classroom} onChange={handleChange}
+                    name="classroom" type="text" placeholder="ห้อง (เช่น 3)" value={formData.classroom} onChange={handleChange}
                     className="w-1/2 px-4 py-3 bg-white/70 border border-sky-200 rounded-xl focus:ring-2 focus:ring-sky-400 focus:outline-none" required
                 />
               </div>
