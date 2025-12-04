@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { getSystemSettings, getLineLoginUrl } from '../../services/api';
 
 const TeacherLoginPage: React.FC = () => {
@@ -13,12 +12,27 @@ const TeacherLoginPage: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Setup LINE Login URL
     const setupLine = async () => {
-        const settings = await getSystemSettings();
-        if (settings['line_login_channel_id']) {
-            const redirect = window.location.origin + window.location.pathname + '#/line-callback';
-            setLineLoginUrl(getLineLoginUrl(settings['line_login_channel_id'], redirect, 'teacher'));
+        try {
+            const settings = await getSystemSettings();
+            // เช็คว่ามีค่า Channel ID หรือไม่ (ต้องเป็นตัวเลขล้วน เช่น 2008618173)
+            if (settings && settings['line_login_channel_id']) {
+                
+                // 1. หา URL ปัจจุบันของหน้าเว็บ (ตัด # ด้านหลังออก)
+                // เพื่อแก้ปัญหา URL ซ้อนกัน https://...https://
+                const currentBaseUrl = window.location.href.split('#')[0];
+                
+                // 2. สร้าง Callback URL ให้ถูกต้อง
+                // ตรวจสอบว่ามี / ปิดท้ายหรือไม่ ถ้ามีให้เอาออกก่อนต่อ string
+                const cleanBaseUrl = currentBaseUrl.endsWith('/') ? currentBaseUrl.slice(0, -1) : currentBaseUrl;
+                const redirect = cleanBaseUrl + '/#/line-callback';
+
+                console.log("Debug Redirect URI:", redirect); // ดู Log นี้ใน Console ว่า URL สวยงามไหม
+
+                setLineLoginUrl(getLineLoginUrl(settings['line_login_channel_id'], redirect, 'teacher'));
+            }
+        } catch (e) {
+            console.error("Error setting up LINE Login:", e);
         }
     };
     setupLine();
@@ -44,8 +58,9 @@ const TeacherLoginPage: React.FC = () => {
   const handleLineLoginClick = (e: React.MouseEvent) => {
       e.preventDefault();
       if (lineLoginUrl) {
-          // Force top level navigation to break out of iframes (AI Preview, etc)
-          window.top.location.href = lineLoginUrl;
+          console.log("Opening LINE Login URL:", lineLoginUrl);
+          // ใช้ window.open เพื่อหลบ Sandbox ของ AI Studio (ถูกต้องแล้ว)
+          window.open(lineLoginUrl, "_blank");
       }
   };
 
@@ -97,7 +112,9 @@ const TeacherLoginPage: React.FC = () => {
                     เข้าสู่ระบบด้วย LINE
                 </button>
             ) : (
-                <p className="text-xs text-slate-400">ยังไม่เปิดใช้งาน LINE Login</p>
+                <p className="text-xs text-slate-400">
+                    กำลังโหลด LINE Login... (ตรวจสอบ Channel ID ใน Settings)
+                </p>
             )}
           </div>
 
