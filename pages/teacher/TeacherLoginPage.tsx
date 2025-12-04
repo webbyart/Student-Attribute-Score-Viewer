@@ -15,20 +15,15 @@ const TeacherLoginPage: React.FC = () => {
     const setupLine = async () => {
         try {
             const settings = await getSystemSettings();
-            // เช็คว่ามีค่า Channel ID หรือไม่ (ต้องเป็นตัวเลขล้วน เช่น 2008618173)
             if (settings && settings['line_login_channel_id']) {
                 
-                // 1. หา URL ปัจจุบันของหน้าเว็บ (ตัด # ด้านหลังออก)
-                // เพื่อแก้ปัญหา URL ซ้อนกัน https://...https://
-                const currentBaseUrl = window.location.href.split('#')[0];
+                // ใช้ URL ของ Netlify โดยตรงเลย เพื่อความชัวร์ที่สุด
+                const myDomain = 'https://student-homework.netlify.app';
                 
-                // 2. สร้าง Callback URL ให้ถูกต้อง
-                // ตรวจสอบว่ามี / ปิดท้ายหรือไม่ ถ้ามีให้เอาออกก่อนต่อ string
-                const cleanBaseUrl = currentBaseUrl.endsWith('/') ? currentBaseUrl.slice(0, -1) : currentBaseUrl;
-                const redirect = cleanBaseUrl + '/#/line-callback';
+                // สร้าง Redirect URL
+                const redirect = myDomain + '/#/line-callback';
 
-                console.log("Debug Redirect URI:", redirect); // ดู Log นี้ใน Console ว่า URL สวยงามไหม
-
+                console.log("Registered Redirect URI:", redirect); 
                 setLineLoginUrl(getLineLoginUrl(settings['line_login_channel_id'], redirect, 'teacher'));
             }
         } catch (e) {
