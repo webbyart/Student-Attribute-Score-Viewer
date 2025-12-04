@@ -30,7 +30,7 @@ const LineCallbackPage: React.FC = () => {
 
             try {
                 // Determine redirect URI used
-                const redirectUri = window.location.origin + window.location.pathname + 'https://student-homework.netlify.app/#/line-callback';
+                const redirectUri = window.location.origin + window.location.pathname + '#/line-callback';
                 
                 setStatus('กำลังตรวจสอบข้อมูลผู้ใช้...');
                 const result = await loginWithLineCode(code, redirectUri);

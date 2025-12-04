@@ -19,6 +19,7 @@ import TeacherLoginPage from './pages/teacher/TeacherLoginPage';
 import TeacherRegisterPage from './pages/teacher/TeacherRegisterPage';
 import TeacherDashboardPage from './pages/teacher/TeacherDashboardPage';
 import TeacherProfilePage from './pages/teacher/TeacherProfilePage';
+import LineCallbackPage from './pages/LineCallbackPage';
 import HomeIcon from './assets/icons/HomeIcon';
 import UserCircleIcon from './assets/icons/UserCircleIcon';
 
@@ -101,6 +102,7 @@ const AppRoutes: React.FC = () => {
     <Routes>
       <Route path="/" element={<PublicCalendarPage />} />
       <Route path="/login-select" element={<RoleSelectionPage />} />
+      <Route path="/line-callback" element={<LineCallbackPage />} />
       
       {/* Student Flow */}
       <Route path="/student/login" element={!user ? <StudentSearchPage /> : <Navigate to={`/student/${user.student_id}`} />} />
