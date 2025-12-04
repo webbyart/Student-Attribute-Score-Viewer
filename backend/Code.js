@@ -1,7 +1,7 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 21.0 (No Mock Data / 100% Sheet Based)
+ * Version: 23.0 (Strict JSON Enforcement)
  */
 
 const DEFAULT_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
@@ -25,6 +25,7 @@ function handleRequest(e) {
     let action = params.action;
     let sheetId = params.sheet_id || DEFAULT_SHEET_ID;
 
+    // Parse POST body if available
     if (e && e.postData && e.postData.contents) {
       try {
         const json = JSON.parse(e.postData.contents);
@@ -34,13 +35,15 @@ function handleRequest(e) {
       } catch (err) {}
     }
 
+    // Merge params into payload if empty
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
-    if (!action) return createJSONOutput({ status: 'ok', version: '21.0' });
+    // Version Check / Health Check
+    if (!action) return createJSONOutput({ status: 'ok', version: '23.0' });
 
     let ss;
     try { ss = SpreadsheetApp.openById(sheetId); } 
-    catch(err) { return createJSONOutput({ error: 'Invalid Sheet ID' }); }
+    catch(err) { return createJSONOutput({ error: 'Invalid Sheet ID: ' + sheetId }); }
 
     let result = {};
     switch (action) {
@@ -80,27 +83,50 @@ function handleRequest(e) {
 // === STRICT JSON OUTPUT ===
 
 function createJSONOutput(data) {
+  // 1. Sanitize Data (Remove Java Objects)
   var safeData = sanitize(data);
+  
+  // 2. Add Version Tag if object
   if (typeof safeData === 'object' && safeData !== null && !Array.isArray(safeData)) {
-    safeData['_backendVersion'] = '21.0';
+    safeData['_backendVersion'] = '23.0';
   }
+  
+  // 3. Stringify
   var jsonString = JSON.stringify(safeData);
+  
+  // 4. Return as JSON MimeType
   return ContentService.createTextOutput(jsonString).setMimeType(ContentService.MimeType.JSON);
 }
 
 function sanitize(data) {
   if (data === null || data === undefined) return null;
-  if (data instanceof Date) return data.toISOString();
+  
+  // Handle Date specifically
+  if (Object.prototype.toString.call(data) === '[object Date]' || data instanceof Date) {
+    return data.toISOString();
+  }
+  
+  // Handle Arrays (Recursive)
   if (Array.isArray(data)) {
     var newArr = [];
-    for (var i = 0; i < data.length; i++) newArr.push(sanitize(data[i]));
+    for (var i = 0; i < data.length; i++) {
+      newArr.push(sanitize(data[i]));
+    }
     return newArr;
   }
+  
+  // Handle Objects (Recursive)
   if (typeof data === 'object') {
     var newObj = {};
-    for (var key in data) newObj[key] = sanitize(data[key]);
+    for (var key in data) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        newObj[key] = sanitize(data[key]);
+      }
+    }
     return newObj;
   }
+  
+  // Return Primitives (String, Number, Boolean)
   return data;
 }
 
@@ -109,27 +135,41 @@ function sanitize(data) {
 function getData(ss, sheetName) {
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return [];
-  const rows = sheet.getDataRange().getValues();
-  if (rows.length < 2) return [];
   
-  const headers = rows[0].map(function(h) { 
+  const range = sheet.getDataRange();
+  const values = range.getValues(); // This returns Java Objects sometimes
+  
+  if (values.length < 2) return [];
+  
+  const headers = values[0].map(function(h) { 
     return String(h).trim().toLowerCase().replace(/\s/g, '_'); 
   });
   
   const result = [];
-  for (var i = 1; i < rows.length; i++) {
-    var row = rows[i];
-    var isEmpty = row.every(function(c) { return String(c) === ""; });
+  for (var i = 1; i < values.length; i++) {
+    var row = values[i];
+    
+    // Check empty row
+    var isEmpty = true;
+    for(var k=0; k<row.length; k++) {
+      if(String(row[k]) !== "") { isEmpty = false; break; }
+    }
     if (isEmpty) continue;
     
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
       if (!headers[j]) continue;
-      obj[headers[j]] = row[j];
+      // Force conversion to primitive using String() unless it's null
+      var cellVal = row[j];
+      if (cellVal instanceof Date) {
+        obj[headers[j]] = cellVal.toISOString();
+      } else {
+        obj[headers[j]] = cellVal; 
+      }
     }
     result.push(obj);
   }
-  return result;
+  return result; // sanitize() will be called on this result later
 }
 
 function getPortfolio(ss, studentId) {
@@ -333,7 +373,7 @@ function sendLineMessage(ss, to, messages, token) {
   }
 }
 
-function checkHealth(ss) { return { version: '21.0', tables: [] }; }
+function checkHealth(ss) { return { version: '23.0', tables: [] }; }
 
 // === SETUP (Headers Only - No Seed Data) ===
 
