@@ -3,8 +3,8 @@ import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Timeta
 
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-// IMPORTANT: Ensure this URL matches your latest Google Apps Script Web App Deployment (Who has access: Anyone)
-export const API_URL = 'https://script.google.com/macros/s/AKfycbzy4AW9RYOXbKQyzBuJxYKd6tKcaFQBITvlHmBr6NDxY6iv4NwcRlWcmLFA5whn0Lx_/exec'; 
+// IMPORTANT: You MUST Deploy "Version 12" of your script and paste the new URL here.
+export const API_URL = 'https://script.google.com/macros/s/AKfycbxto6hCEHtrwgHUzzHmQ2mF8ftXNNJdDK1rSiaonxklduF196o4RQMybBPd-K3ZBded/exec'; 
 
 const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
@@ -43,7 +43,7 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
     };
 
     let attempts = 0;
-    const maxAttempts = 2; // Reduced attempts to fail faster
+    const maxAttempts = 2;
 
     while (attempts < maxAttempts) {
         try {
@@ -51,24 +51,26 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
             const text = await response.text();
+            
+            // Check for Raw Java Array Error
+            if (text.startsWith('[Ljava') || text.includes('Unexpected token') || text.includes('Ljava.lang')) {
+                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v12) of the Script.");
+                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v12)." };
+            }
+
             try {
                 const data = JSON.parse(text);
                 if (data.error) throw new Error(data.error);
+                if (data._backendVersion !== '12.0') console.warn("WARNING: Backend version mismatch. Expected v12.0, got " + (data._backendVersion || 'Unknown'));
                 return Array.isArray(data) ? data.map(normalizeKeys) : normalizeKeys(data);
             } catch (e: any) {
-                // Trap for Java Array String error "[Ljava.lang..." or malformed JSON
-                if (text.startsWith('[Ljava') || text.includes('Unexpected token')) {
-                    console.error("CRITICAL BACKEND ERROR: Response is not JSON. The backend script must be re-deployed.");
-                    // Return empty data/null based on expected type (simplistic) rather than throwing
-                    // This allows the app to load partially even if one request fails badly
-                    return action.startsWith('get') ? [] : { success: false, message: 'Backend serialization error' };
-                }
                 console.error("JSON Parse Error:", e.message, "Response:", text.substring(0, 100));
-                throw new Error("Invalid JSON response from server.");
+                if (action.startsWith('get')) return [];
+                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v12).");
             }
         } catch (error: any) {
             attempts++;
-            if (error.message === "MALFORMED_JSON_RESPONSE") throw error; // Don't retry parsing errors
+            if (error.message.includes("JSON") || error.message.includes("Backend")) throw error; 
 
             console.warn(`API Connection Failed [${action}] (Attempt ${attempts}/${maxAttempts}):`, error);
             if (attempts >= maxAttempts) throw error;
@@ -154,13 +156,12 @@ export const getAllTasks = async (): Promise<Task[]> => {
             targetGrade: t.target_grade,
             targetClassroom: t.target_classroom,
             targetStudentId: t.target_student_id,
-            createdBy: t.created_by,
+            createdBy: t.created_by || 'Admin',
             createdAt: t.created_at || new Date().toISOString(),
             attachments: t.attachments ? (typeof t.attachments === 'string' && t.attachments.startsWith('[') ? JSON.parse(t.attachments) : []) : [],
-            isCompleted: false 
+            isCompleted: t.is_completed === 'TRUE' || t.is_completed === true || t.is_completed === 'true'
         }));
     } catch (e) {
-        // Return empty array instead of throwing to keep the app alive
         console.error("Error fetching tasks:", e);
         return [];
     }
@@ -242,7 +243,6 @@ export const getStudentDataById = async (studentId: string | undefined): Promise
         return { student, tasks: myTasks, notifications, attributes: [], scores: [] };
     } catch (e) {
         console.error("Error fetching student data:", e);
-        // Do not throw, return null to handle gracefully
         return null;
     }
 };
@@ -316,21 +316,94 @@ export const generateTaskFlexMessage = (task: Task) => {
     const color = getFlexColor(task.category);
     const dateStr = new Date(task.dueDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
     const timeStr = new Date(task.dueDate).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    const createDateStr = task.createdAt ? new Date(task.createdAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit' }) : '-';
+
     return {
-        type: "flex", altText: `งานใหม่: ${task.title}`,
+        type: "flex",
+        altText: `งานใหม่: ${task.title}`,
         contents: {
-            type: "bubble", size: "mega",
-            header: { type: "box", layout: "vertical", contents: [ { type: "text", text: TaskCategoryLabel[task.category] || "แจ้งเตือน", color: "#ffffff", weight: "bold", size: "sm" } ], backgroundColor: color, paddingAll: "15px" },
-            body: { type: "box", layout: "vertical", contents: [
-                { type: "text", text: task.title, weight: "bold", size: "xl", wrap: true, color: "#1f2937" },
-                { type: "box", layout: "horizontal", contents: [ { type: "text", text: "📚 วิชา:", size: "sm", color: "#888888", flex: 3 }, { type: "text", text: task.subject, size: "sm", color: "#111111", flex: 7, wrap: true, weight: "bold" } ], margin: "lg" },
-                { type: "box", layout: "horizontal", contents: [ { type: "text", text: "📅 กำหนด:", size: "sm", color: "#888888", flex: 3 }, { type: "text", text: `${dateStr} เวลา ${timeStr} น.`, size: "sm", color: "#ef4444", flex: 7, weight: "bold" } ], margin: "sm" },
-                { type: "box", layout: "horizontal", contents: [ { type: "text", text: "👥 สำหรับ:", size: "sm", color: "#888888", flex: 3 }, { type: "text", text: `ชั้น ${task.targetGrade}/${task.targetClassroom}`, size: "sm", color: "#111111", flex: 7 } ], margin: "sm" },
-                { type: "separator", margin: "lg", color: "#f0f0f0" },
-                { type: "text", text: task.description || "-", size: "sm", color: "#555555", wrap: true, margin: "md" },
-                { type: "box", layout: "horizontal", contents: [ { type: "text", text: "👤 ผู้แจ้ง:", size: "sm", color: "#888888", flex: 3 }, { type: "text", text: task.createdBy || "-", size: "sm", color: "#111111", flex: 7 } ], margin: "sm" }
-            ]},
-            footer: { type: "box", layout: "vertical", contents: [ { type: "button", action: { type: "uri", label: "ดูรายละเอียด", uri: `https://liff.line.me/${DEFAULT_LIFF_ID}` }, style: "primary", color: color } ] }
+            type: "bubble",
+            size: "mega",
+            header: {
+                type: "box",
+                layout: "vertical",
+                contents: [
+                    { type: "text", text: TaskCategoryLabel[task.category] || "แจ้งเตือน", color: "#ffffff", weight: "bold", size: "sm" }
+                ],
+                backgroundColor: color,
+                paddingAll: "15px"
+            },
+            body: {
+                type: "box",
+                layout: "vertical",
+                contents: [
+                    { type: "text", text: task.title, weight: "bold", size: "xl", wrap: true, color: "#1f2937" },
+                    { type: "text", text: task.subject, size: "sm", color: "#6b7280", margin: "xs", weight: "bold" },
+                    
+                    { type: "separator", margin: "md", color: "#e5e7eb" },
+                    
+                    // Details Grid
+                    {
+                        type: "box",
+                        layout: "vertical",
+                        margin: "md",
+                        spacing: "sm",
+                        contents: [
+                            {
+                                type: "box",
+                                layout: "baseline",
+                                contents: [
+                                    { type: "text", text: "📅 กำหนด:", size: "xs", color: "#9ca3af", flex: 3 },
+                                    { type: "text", text: `${dateStr} ${timeStr} น.`, size: "xs", color: "#ef4444", flex: 7, weight: "bold" }
+                                ]
+                            },
+                            {
+                                type: "box",
+                                layout: "baseline",
+                                contents: [
+                                    { type: "text", text: "👥 สำหรับ:", size: "xs", color: "#9ca3af", flex: 3 },
+                                    { type: "text", text: `ชั้น ${task.targetGrade}/${task.targetClassroom}`, size: "xs", color: "#374151", flex: 7 }
+                                ]
+                            },
+                             {
+                                type: "box",
+                                layout: "baseline",
+                                contents: [
+                                    { type: "text", text: "👤 ผู้แจ้ง:", size: "xs", color: "#9ca3af", flex: 3 },
+                                    { type: "text", text: task.createdBy || "-", size: "xs", color: "#374151", flex: 7 }
+                                ]
+                            },
+                             {
+                                type: "box",
+                                layout: "baseline",
+                                contents: [
+                                    { type: "text", text: "🕒 สร้างเมื่อ:", size: "xs", color: "#9ca3af", flex: 3 },
+                                    { type: "text", text: createDateStr, size: "xs", color: "#9ca3af", flex: 7 }
+                                ]
+                            }
+                        ]
+                    },
+
+                    { type: "separator", margin: "md", color: "#e5e7eb" },
+
+                    { type: "text", text: "รายละเอียดเพิ่มเติม:", size: "xs", color: "#6b7280", margin: "md", weight: "bold" },
+                    { type: "text", text: task.description || "-", size: "xs", color: "#374151", wrap: true, margin: "xs" }
+                ]
+            },
+            footer: {
+                type: "box",
+                layout: "vertical",
+                contents: [
+                    {
+                        type: "button",
+                        action: { type: "uri", label: "ดูรายละเอียด", uri: `https://liff.line.me/${DEFAULT_LIFF_ID}` },
+                        style: "primary",
+                        color: color,
+                        height: "sm"
+                    }
+                ],
+                paddingAll: "15px"
+            }
         }
     };
 };

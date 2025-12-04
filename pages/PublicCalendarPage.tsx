@@ -21,7 +21,6 @@ const PublicCalendarPage: React.FC = () => {
     fetchTasks();
   }, []);
 
-  // Update selected tasks when date or tasks change
   useEffect(() => {
     if (tasks.length > 0) {
         filterTasksByDate(selectedDate, tasks);
@@ -29,9 +28,14 @@ const PublicCalendarPage: React.FC = () => {
   }, [tasks, selectedDate]);
 
   const fetchTasks = async () => {
-      const data = await getAllTasks();
-      setTasks(data);
-      setLoading(false);
+      try {
+        const data = await getAllTasks();
+        setTasks(data);
+      } catch (e) {
+        console.error("Failed to load calendar tasks", e);
+      } finally {
+        setLoading(false);
+      }
   };
 
   const filterTasksByDate = (date: Date, allTasks: Task[]) => {
