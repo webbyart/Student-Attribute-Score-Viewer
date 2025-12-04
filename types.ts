@@ -141,3 +141,13 @@ export interface SystemSettings {
     key: string;
     value: string;
 }
+
+export interface PortfolioItem {
+    id: string;
+    student_id: string;
+    title: string;
+    description: string;
+    category: 'Award' | 'Project' | 'Activity';
+    imageUrl: string;
+    date: string;
+}

@@ -163,7 +163,7 @@ const TeacherDashboardPage: React.FC = () => {
         setTimeout(() => setSettingsMessage(''), 3000);
     }
 
-    const handleTestLine = async (targetId: string, type: 'User' | 'Group') => {
+    const handleTestLine = async (targetId: string, type: 'User' | 'Group', useDefaultToken = false) => {
         if (!targetId) {
             setSettingsMessage(`กรุณาระบุ ${type} ID ก่อนทดสอบ`);
             return;
@@ -173,7 +173,7 @@ const TeacherDashboardPage: React.FC = () => {
         const dummyTask: any = {
             title: `ทดสอบส่งเข้า ${type === 'Group' ? 'กลุ่ม' : 'ส่วนตัว'}`,
             subject: 'วิชาวิทยาการคำนวณ',
-            description: 'นี่คือตัวอย่างการแสดงผลแบบ Flex Message บน LINE',
+            description: `นี่คือตัวอย่างการแสดงผลแบบ Flex Message บน LINE (${useDefaultToken ? 'ใช้ Default Token' : 'ใช้ Configured Token'})`,
             dueDate: new Date(Date.now() + 86400000).toISOString(),
             category: TaskCategory.HOMEWORK,
             priority: 'High',
@@ -184,7 +184,9 @@ const TeacherDashboardPage: React.FC = () => {
         };
         
         const flexMessage = generateTaskFlexMessage(dummyTask);
-        const result = await testLineNotification(lineToken, targetId, flexMessage);
+        // Pass empty token string to force backend default if useDefaultToken is true
+        const tokenToUse = useDefaultToken ? "" : lineToken;
+        const result = await testLineNotification(tokenToUse, targetId, flexMessage);
         
         setSettingsMessage(result.message);
         setIsSendingTest(false);
@@ -504,7 +506,7 @@ const TeacherDashboardPage: React.FC = () => {
                     </div>
                 )}
                 
-                {/* ... (rest of the component remains similar, ensuring other tabs are preserved) */}
+                {/* ... (rest of the component, including 'users' and 'settings' tabs, kept as is) */}
                 {activeTab === 'schedule' && (
                     <div className="animate-fade-in space-y-4">
                          <TimetableGrid 
@@ -657,7 +659,7 @@ const TeacherDashboardPage: React.FC = () => {
                         <Card>
                             <div className="flex items-center gap-3 mb-6">
                                 <div className="p-3 bg-green-100 text-green-600 rounded-full">
-                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M22 10.5C22 5.25 17.07 1 11 1S0 5.25 0 10.5c0 4.69 3.75 8.59 9 9.35.35.08.83.25.96.11.27.07.69.04.99-.08 1.1-.96 3.93-1.07 4.31-.17.61-.09.84.34.84.45 0 1.2-.23 4.96-3.38 3.58.98 7.77-.52 7.77-5.67z"/></svg>
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M22 10.5C22 5.25 17.07 1 11 1S0 5.25 0 10.5c0 4.69 3.75 8.59 9 9.35.35.83.25.96.11.27.07.69.04.99-.08 1.1-.96 3.93-1.07 4.31-.17.61-.09.84.34.84.45 0 1.2-.23 4.96-3.38 3.58.98 7.77-.52 7.77-5.67z"/></svg>
                                 </div>
                                 <div>
                                     <h2 className="text-lg font-bold text-slate-800">ตั้งค่า LINE Messaging & Login</h2>
@@ -682,6 +684,13 @@ const TeacherDashboardPage: React.FC = () => {
                                             <div className="flex gap-2">
                                                 <input type="text" value={testGroupId} onChange={(e) => setTestGroupId(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg bg-white font-mono text-xs" placeholder="Cxxxxxxxx..." />
                                                 <button onClick={() => handleTestLine(testGroupId, 'Group')} disabled={isSendingTest} className="px-3 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs hover:bg-blue-100 border border-blue-200 whitespace-nowrap">ทดสอบ</button>
+                                            </div>
+                                            {/* Explicit button to test using default token */}
+                                            <div className="mt-2">
+                                                <button onClick={() => handleTestLine(testGroupId, 'Group', true)} disabled={isSendingTest} className="w-full py-2 bg-slate-600 text-white rounded-lg font-bold text-xs hover:bg-slate-700 transition shadow-sm">
+                                                    📢 ทดสอบส่งเข้ากลุ่ม (Default Token)
+                                                </button>
+                                                <p className="text-[10px] text-slate-400 mt-1 text-center">ใช้ Token ที่ฝังมากับระบบหากไม่ได้ตั้งค่าในฟอร์ม</p>
                                             </div>
                                         </div>
                                     </div>

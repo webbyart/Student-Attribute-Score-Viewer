@@ -35,29 +35,43 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose }) => {
                 )}
             </div>
             <h2 className="text-2xl font-bold leading-tight">{task.title}</h2>
-            <p className="opacity-90 mt-1">{task.subject}</p>
+            <div className="flex justify-between items-end mt-2">
+                <div>
+                     <p className="font-bold opacity-90 text-sm">วิชา</p>
+                     <p className="text-lg font-bold">{task.subject}</p>
+                </div>
+                <div className="text-right">
+                     <p className="opacity-80 text-xs">ผู้แจ้ง</p>
+                     <p className="font-bold text-sm">{task.createdBy || 'Admin Master'}</p>
+                </div>
+            </div>
         </div>
 
         {/* Body */}
         <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
-                 <div>
-                     <p className="text-xs text-slate-500 font-medium">กำหนดส่ง / เวลา</p>
-                     <p className="text-sm font-bold text-slate-800">
-                        {new Date(task.dueDate).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'})}
+            {/* Created At / Due Date Row */}
+            <div className="flex gap-4">
+                 <div className="flex-1 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                     <p className="text-xs text-slate-400 font-bold uppercase mb-1">วันที่สร้าง</p>
+                     <p className="text-sm font-medium text-slate-700">
+                        {task.createdAt ? new Date(task.createdAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric'}) : '-'}
                      </p>
                  </div>
-                 <div className="text-right">
-                     <p className="text-xs text-slate-500 font-medium">เวลา</p>
-                     <p className={`text-lg font-bold ${colors.text}`}>
+                 <div className="flex-1 p-3 bg-red-50 rounded-xl border border-red-100">
+                     <p className="text-xs text-red-400 font-bold uppercase mb-1">กำหนดส่ง</p>
+                     <p className="text-lg font-bold text-red-600">
+                        {new Date(task.dueDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric'})}
+                     </p>
+                     <p className="text-xs text-red-500 font-medium">
                         {new Date(task.dueDate).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit'})} น.
                      </p>
                  </div>
             </div>
 
-            <div>
-                <h3 className="text-sm font-bold text-slate-700 mb-2">รายละเอียด</h3>
-                <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">
+            {/* Target Class Info */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <p className="text-xs text-slate-400 font-bold uppercase mb-1">สำหรับ: ชั้น {task.targetGrade}/{task.targetClassroom}</p>
+                 <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
                     {task.description || 'ไม่มีรายละเอียดเพิ่มเติม'}
                 </p>
             </div>
@@ -75,6 +89,10 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose }) => {
                     </div>
                 </div>
             )}
+            
+            <button onClick={onClose} className="w-full py-3 bg-blue-500 text-white rounded-xl font-bold shadow-md hover:bg-blue-600 transition">
+                ดูรายละเอียด
+            </button>
         </div>
       </div>
     </div>

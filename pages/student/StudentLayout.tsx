@@ -27,8 +27,9 @@ const StudentLayout: React.FC = () => {
 
   const studentNavItems = [
     { path: `/student/${studentId}`, label: 'หน้าหลัก', icon: 'HomeIcon' },
-    { path: `/student/${studentId}/schedule`, label: 'ปฏิทิน', icon: 'ChartBarIcon' }, // Icon reused
+    { path: `/student/${studentId}/schedule`, label: 'ปฏิทิน', icon: 'ChartBarIcon' }, 
     { path: `/student/${studentId}/categories`, label: 'กลุ่มงาน', icon: 'DocumentTextIcon' },
+    { path: `/student/${studentId}/profile`, label: 'โปรไฟล์', icon: 'UserCircleIcon' },
   ];
 
   return (

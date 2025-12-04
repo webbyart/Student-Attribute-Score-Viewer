@@ -5,6 +5,7 @@ import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 import { StudentData, TaskCategory, TaskCategoryLabel, Task } from '../../types';
 import { markNotificationRead, toggleTaskStatus, sendCompletionNotification } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 
 const StudentDashboardPage: React.FC = () => {
   const contextData = useOutletContext<StudentData>();
@@ -12,6 +13,7 @@ const StudentDashboardPage: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<'All' | TaskCategory>('All');
   const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
   const navigate = useNavigate();
   const { logout } = useAuth();
@@ -74,10 +76,8 @@ const StudentDashboardPage: React.FC = () => {
   };
 
   const handleLogout = () => {
-      if(window.confirm('ต้องการออกจากระบบใช่หรือไม่?')) {
-          logout();
-          navigate('/login-select');
-      }
+      logout();
+      navigate('/login-select');
   }
 
   const menus = [
@@ -90,6 +90,16 @@ const StudentDashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in pb-20 relative">
+      <ConfirmModal 
+        isOpen={isLogoutConfirmOpen}
+        title="ยืนยันการออกจากระบบ"
+        message="คุณต้องการออกจากระบบใช่หรือไม่?"
+        onConfirm={handleLogout}
+        onCancel={() => setIsLogoutConfirmOpen(false)}
+        confirmText="ออกจากระบบ"
+        variant="danger"
+      />
+
       {/* Header Profile */}
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-3">
@@ -161,7 +171,7 @@ const StudentDashboardPage: React.FC = () => {
 
              {/* Logout Button */}
             <button 
-                onClick={handleLogout}
+                onClick={() => setIsLogoutConfirmOpen(true)}
                 className="p-2 bg-red-50 text-red-500 rounded-full shadow-sm hover:bg-red-100 transition"
                 title="ออกจากระบบ"
             >

@@ -14,6 +14,7 @@ import StudentLayout from './pages/student/StudentLayout';
 import StudentDashboardPage from './pages/student/StudentDashboardPage';
 import StudentScoresPage from './pages/student/StudentScoresPage'; 
 import StudentSummaryPage from './pages/student/StudentSummaryPage';
+import StudentProfilePage from './pages/student/StudentProfilePage'; // Added
 import TeacherLoginPage from './pages/teacher/TeacherLoginPage';
 import TeacherRegisterPage from './pages/teacher/TeacherRegisterPage';
 import TeacherDashboardPage from './pages/teacher/TeacherDashboardPage';
@@ -112,6 +113,7 @@ const AppRoutes: React.FC = () => {
           <Route index element={<StudentDashboardPage />} />
           <Route path="schedule" element={<StudentScoresPage />} />
           <Route path="categories" element={<StudentSummaryPage />} />
+          <Route path="profile" element={<StudentProfilePage />} />
         </Route>
       </Route>
 
