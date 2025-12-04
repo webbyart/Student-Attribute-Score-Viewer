@@ -2,7 +2,7 @@
 import { StudentData, Student, Task, Teacher, TaskCategory, Notification, TimetableEntry, SystemSettings, PortfolioItem, TaskCategoryLabel, getCategoryColor } from '../types';
 
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-export const API_URL = 'https://script.google.com/macros/s/AKfycbzNxmBNCllMNsNhDDkLU3yAY0_eMtveVLGTj00OrMERa6tbQ7qCdh0qP26lEpb2T0l6/exec'; 
+export const API_URL = 'https://script.google.com/macros/s/AKfycbx4tU4FBHDqh7xX5CaMKmfaDS6xFpSK0s0l9tZiSdzubrKClxZO5NVE_9UI7q4qHoqL/exec'; 
 
 const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
