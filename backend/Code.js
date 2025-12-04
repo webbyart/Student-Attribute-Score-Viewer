@@ -1,12 +1,10 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 15.0 (Strict JSON Enforcement)
+ * Version: 17.0 (Line Login Supported)
  */
 
 const DEFAULT_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
-const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
 
 function triggerAuth() {
   UrlFetchApp.fetch("https://www.google.com");
@@ -36,7 +34,7 @@ function handleRequest(e) {
 
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
-    if (!action) return createJSONOutput({ status: 'ok', version: '15.0' });
+    if (!action) return createJSONOutput({ status: 'ok', version: '17.0' });
 
     let ss;
     try { ss = SpreadsheetApp.openById(sheetId); } 
@@ -48,7 +46,7 @@ function handleRequest(e) {
       case 'getSystemSettings': result = getSettings(ss); break;
       case 'saveSystemSettings': result = saveSettings(ss, payload); break;
       case 'sendLineMessage': result = sendLineMessage(ss, payload.to, payload.messages, payload.token); break;
-      case 'lineLogin': result = handleLineLogin(ss, payload.code, payload.redirectUri); break;
+      case 'loginWithLine': result = loginWithLine(ss, payload.code, payload.redirectUri); break;
       case 'getStudents': result = getData(ss, 'Students'); break;
       case 'getTeachers': result = getData(ss, 'Teachers'); break;
       case 'getTasks': result = getData(ss, 'Tasks'); break;
@@ -78,12 +76,10 @@ function handleRequest(e) {
 // === STRICT JSON OUTPUT ===
 
 function createJSONOutput(data) {
-  // Deep copy and sanitize to ensure NO Java Objects remain
   var safeData = sanitize(data);
   if (typeof safeData === 'object' && safeData !== null && !Array.isArray(safeData)) {
-    safeData['_backendVersion'] = '15.0';
+    safeData['_backendVersion'] = '17.0';
   }
-  
   var jsonString = JSON.stringify(safeData);
   return ContentService.createTextOutput(jsonString).setMimeType(ContentService.MimeType.JSON);
 }
@@ -91,8 +87,6 @@ function createJSONOutput(data) {
 function sanitize(data) {
   if (data === null || data === undefined) return null;
   if (data instanceof Date) return data.toISOString();
-  
-  // Recursively handle Arrays
   if (Array.isArray(data)) {
     var newArr = [];
     for (var i = 0; i < data.length; i++) {
@@ -100,8 +94,6 @@ function sanitize(data) {
     }
     return newArr;
   }
-  
-  // Recursively handle Objects
   if (typeof data === 'object') {
     var newObj = {};
     for (var key in data) {
@@ -109,9 +101,71 @@ function sanitize(data) {
     }
     return newObj;
   }
-  
-  // Primitives
   return data;
+}
+
+// === AUTH HELPER ===
+
+function loginWithLine(ss, code, redirectUri) {
+  const settings = getSettings(ss);
+  const clientId = settings['line_login_channel_id'];
+  const clientSecret = settings['line_channel_secret']; 
+  
+  if (!clientId || !clientSecret) return { success: false, message: 'LINE Login not configured in System Settings' };
+
+  try {
+    const tokenUrl = 'https://api.line.me/oauth2/v2.1/token';
+    const payload = {
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: redirectUri,
+      client_id: clientId,
+      client_secret: clientSecret
+    };
+    
+    const tokenOptions = {
+      method: 'post',
+      payload: payload
+    };
+    
+    const tokenReq = UrlFetchApp.fetch(tokenUrl, tokenOptions);
+    const tokenRes = JSON.parse(tokenReq.getContentText());
+    
+    if (!tokenRes.access_token) return { success: false, message: 'Failed to obtain access token from LINE' };
+    
+    // Get Profile
+    const profileUrl = 'https://api.line.me/v2/profile';
+    const profileOptions = {
+      headers: { 'Authorization': 'Bearer ' + tokenRes.access_token }
+    };
+    const profileReq = UrlFetchApp.fetch(profileUrl, profileOptions);
+    const profile = JSON.parse(profileReq.getContentText());
+    
+    if (!profile.userId) return { success: false, message: 'Failed to get user profile from LINE' };
+    
+    const lineUserId = profile.userId;
+    
+    // Check Students
+    const students = getData(ss, 'Students');
+    for (var i=0; i<students.length; i++) {
+      if (String(students[i].line_user_id) === String(lineUserId)) {
+         return { success: true, role: 'student', user: students[i], lineProfile: profile };
+      }
+    }
+    
+    // Check Teachers
+    const teachers = getData(ss, 'Teachers');
+    for (var i=0; i<teachers.length; i++) {
+      if (String(teachers[i].line_user_id) === String(lineUserId)) {
+         return { success: true, role: 'teacher', user: teachers[i], lineProfile: profile };
+      }
+    }
+    
+    return { success: false, message: 'User not found', lineUserId: lineUserId, lineProfile: profile };
+    
+  } catch (e) {
+    return { success: false, message: 'LINE Login Error: ' + e.message };
+  }
 }
 
 // === DB OPERATIONS ===
@@ -256,8 +310,6 @@ function toggleTaskCompletion(ss, sId, tId, isComp) {
   return { success: true };
 }
 
-// === SETTINGS & LINE ===
-
 function getSettings(ss) {
   const sheet = ss.getSheetByName('SystemSettings');
   if (!sheet) return {};
@@ -281,53 +333,6 @@ function saveSettings(ss, payload) {
   return { success: true };
 }
 
-function handleLineLogin(ss, code, redirectUri) {
-  try {
-    const settings = getSettings(ss);
-    const clientId = settings['line_login_channel_id'];
-    const clientSecret = settings['line_channel_secret'];
-    
-    if (!clientId || !clientSecret) return { success: false, message: 'Missing LINE Config' };
-
-    const tokenResp = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/token', {
-      method: 'post',
-      payload: {
-        grant_type: 'authorization_code', code: code, redirect_uri: redirectUri,
-        client_id: clientId, client_secret: clientSecret
-      },
-      muteHttpExceptions: true
-    });
-    
-    if (tokenResp.getResponseCode() !== 200) return { success: false, message: 'Token Error: ' + tokenResp.getContentText() };
-    
-    const token = JSON.parse(tokenResp.getContentText());
-    const profileResp = UrlFetchApp.fetch('https://api.line.me/v2/profile', {
-      headers: { 'Authorization': 'Bearer ' + token.access_token }
-    });
-    
-    const profile = JSON.parse(profileResp.getContentText());
-    
-    // Sync
-    const students = getData(ss, 'Students');
-    const student = students.find(function(s){ return String(s.line_user_id) === String(profile.userId); });
-    
-    if (student) {
-      if(student.profile_image !== profile.pictureUrl) {
-         updateRow(ss, 'Students', student.student_id, { profile_image: profile.pictureUrl }, 'student_id');
-      }
-      return { success: true, role: 'student', user: student, lineProfile: profile };
-    }
-    
-    const teachers = getData(ss, 'Teachers');
-    const teacher = teachers.find(function(t){ return String(t.line_user_id) === String(profile.userId); });
-    if(teacher) return { success: true, role: 'teacher', user: teacher, lineProfile: profile };
-
-    return { success: false, message: 'User not found', lineUserId: profile.userId, lineProfile: profile };
-  } catch(e) {
-    return { success: false, message: String(e) };
-  }
-}
-
 function sendLineMessage(ss, to, messages, token) {
   const settings = getSettings(ss);
   const accToken = token || settings['line_channel_access_token'];
@@ -346,10 +351,10 @@ function sendLineMessage(ss, to, messages, token) {
 }
 
 function checkHealth(ss) {
-  return { version: '15.0', tables: [] };
+  return { version: '17.0', tables: [] };
 }
 
-// === SETUP ===
+// === SETUP (PURE SHEET - NO MOCK DATA) ===
 
 function setupSheet() {
   const ss = SpreadsheetApp.openById(DEFAULT_SHEET_ID);
@@ -360,6 +365,7 @@ function setupSheet() {
     return s;
   };
   
+  // Only Create Headers
   defineSheet('Students', ['student_id', 'student_name', 'email', 'grade', 'classroom', 'password', 'line_user_id', 'profile_image']);
   defineSheet('Teachers', ['teacher_id', 'name', 'email', 'password', 'line_user_id']);
   defineSheet('Tasks', ['id', 'title', 'subject', 'description', 'due_date', 'category', 'priority', 'target_grade', 'target_classroom', 'target_student_id', 'created_by', 'attachments', 'is_completed', 'created_at']);
@@ -367,13 +373,4 @@ function setupSheet() {
   defineSheet('SystemSettings', ['key', 'value']);
   defineSheet('TaskCompletions', ['student_id', 'task_id', 'is_completed', 'updated_at']);
   defineSheet('Portfolio', ['id', 'student_id', 'title', 'description', 'category', 'image_url', 'date']);
-  
-  // Seed
-  if (ss.getSheetByName('Tasks').getLastRow() <= 1) {
-    addRow(ss, 'Tasks', {
-      id: 'task_sample_1', title: 'การบ้านทดสอบ 1', subject: 'ทดสอบระบบ', description: 'ยินดีต้อนรับสู่ระบบ',
-      due_date: new Date().toISOString(), category: 'HOMEWORK', priority: 'Medium', target_grade: 'ม.3', target_classroom: '3', 
-      created_by: 'Admin', is_completed: 'FALSE', created_at: new Date().toISOString()
-    });
-  }
 }

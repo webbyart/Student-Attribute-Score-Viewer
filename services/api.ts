@@ -3,12 +3,11 @@ import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Timeta
 
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-// IMPORTANT: You MUST Deploy "Version 15" of your script and paste the new URL here.
-export const API_URL = 'https://script.google.com/macros/s/AKfycbxZYRRPXPYeq7E__XBu7N8uSovxJuiOQpQxl9AtaciToBBzL6EAsTTAQg0HQ6FBQ3U_/exec'; 
+// IMPORTANT: You MUST Deploy "Version 17" of your script and paste the new URL here.
+export const API_URL = 'https://script.google.com/macros/s/AKfycbzNxmBNCllMNsNhDDkLU3yAY0_eMtveVLGTj00OrMERa6tbQ7qCdh0qP26lEpb2T0l6/exec'; 
 
 const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
-const DEFAULT_LIFF_ID = '2008618173'; 
 const APP_URL = 'https://student-homework.netlify.app/';
 
 // --- API Helpers ---
@@ -54,19 +53,19 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
             const text = await response.text();
             
             if (text.startsWith('[Ljava') || text.includes('Unexpected token') || text.includes('Ljava.lang')) {
-                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v15) of the Script.");
-                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v15)." };
+                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v17) of the Script.");
+                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v17)." };
             }
 
             try {
                 const data = JSON.parse(text);
                 if (data.error) throw new Error(data.error);
-                if (data._backendVersion !== '15.0') console.warn("WARNING: Backend version mismatch. Expected v15.0, got " + (data._backendVersion || 'Unknown'));
+                if (data._backendVersion !== '17.0') console.warn("WARNING: Backend version mismatch. Expected v17.0, got " + (data._backendVersion || 'Unknown'));
                 return Array.isArray(data) ? data.map(normalizeKeys) : normalizeKeys(data);
             } catch (e: any) {
                 console.error("JSON Parse Error:", e.message, "Response:", text.substring(0, 100));
                 if (action.startsWith('get')) return [];
-                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v15).");
+                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v17).");
             }
         } catch (error: any) {
             attempts++;
@@ -137,6 +136,16 @@ export const loginTeacher = async (email: string, password: string): Promise<Tea
 export const registerStudent = async (data: any) => apiRequest('registerStudent', 'POST', data);
 export const registerTeacher = async (name: string, email: string, password: string, lineUserId?: string) => 
     apiRequest('registerTeacher', 'POST', { name, email, password, lineUserId });
+
+export const loginWithLineCode = async (code: string, redirectUri: string) => {
+    try {
+        const result = await apiRequest('loginWithLine', 'POST', { code, redirectUri });
+        return result;
+    } catch (e) {
+        console.error("LINE Login Error", e);
+        return { success: false, message: "Connection Error" };
+    }
+};
 
 // --- DATA SERVICES ---
 
@@ -290,10 +299,9 @@ export const getSystemSettings = async (): Promise<Record<string, string>> => {
         const final = { ...settings };
         if (!final['line_channel_access_token']) final['line_channel_access_token'] = DEFAULT_LINE_TOKEN;
         if (!final['test_group_id']) final['test_group_id'] = DEFAULT_GROUP_ID;
-        if (!final['line_login_channel_id']) final['line_login_channel_id'] = DEFAULT_LIFF_ID;
         return final;
     } catch (e) {
-        return { 'line_channel_access_token': DEFAULT_LINE_TOKEN, 'test_group_id': DEFAULT_GROUP_ID, 'line_login_channel_id': DEFAULT_LIFF_ID };
+        return { 'line_channel_access_token': DEFAULT_LINE_TOKEN, 'test_group_id': DEFAULT_GROUP_ID };
     }
 }
 export const saveSystemSettings = async (settings: Record<string, string>) => apiRequest('saveSystemSettings', 'POST', settings);
@@ -431,17 +439,5 @@ export const testLineNotification = async (token: string, userId: string, messag
     const res = await apiRequest('sendLineMessage', 'POST', { to: userId, messages: [message], token });
     return { success: res.success, message: res.success ? 'ส่งข้อความสำเร็จ' : (res.message || 'ส่งไม่สำเร็จ') };
 }
-
-export const getLineLoginUrl = (channelId: string, redirectUri: string, state: string) => 
-    `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${channelId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=profile openid email`;
-
-export const loginWithLineCode = async (code: string, redirectUri: string) => {
-    try {
-        return await apiRequest('lineLogin', 'POST', { code, redirectUri });
-    } catch (e: any) {
-        console.error("LINE Login API Fail:", e);
-        throw new Error("Cannot connect to Login Server: " + e.message);
-    }
-};
 
 export const syncLineUserProfile = async () => {};
