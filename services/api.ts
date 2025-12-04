@@ -3,12 +3,13 @@ import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Timeta
 
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-// IMPORTANT: You MUST Deploy "Version 12" of your script and paste the new URL here.
-export const API_URL = 'https://script.google.com/macros/s/AKfycbxto6hCEHtrwgHUzzHmQ2mF8ftXNNJdDK1rSiaonxklduF196o4RQMybBPd-K3ZBded/exec'; 
+// IMPORTANT: You MUST Deploy "Version 14" of your script and paste the new URL here.
+export const API_URL = 'https://script.google.com/macros/s/AKfycbzNxmBNCllMNsNhDDkLU3yAY0_eMtveVLGTj00OrMERa6tbQ7qCdh0qP26lEpb2T0l6/exec'; 
 
 const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
 const DEFAULT_LIFF_ID = '2008618173'; 
+const APP_URL = 'https://student-homework.netlify.app/';
 
 // --- API Helpers ---
 
@@ -52,21 +53,20 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
 
             const text = await response.text();
             
-            // Check for Raw Java Array Error
             if (text.startsWith('[Ljava') || text.includes('Unexpected token') || text.includes('Ljava.lang')) {
-                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v12) of the Script.");
-                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v12)." };
+                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v14) of the Script.");
+                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v14)." };
             }
 
             try {
                 const data = JSON.parse(text);
                 if (data.error) throw new Error(data.error);
-                if (data._backendVersion !== '12.0') console.warn("WARNING: Backend version mismatch. Expected v12.0, got " + (data._backendVersion || 'Unknown'));
+                if (data._backendVersion !== '14.0') console.warn("WARNING: Backend version mismatch. Expected v14.0, got " + (data._backendVersion || 'Unknown'));
                 return Array.isArray(data) ? data.map(normalizeKeys) : normalizeKeys(data);
             } catch (e: any) {
                 console.error("JSON Parse Error:", e.message, "Response:", text.substring(0, 100));
                 if (action.startsWith('get')) return [];
-                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v12).");
+                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v14).");
             }
         } catch (error: any) {
             attempts++;
@@ -143,7 +143,10 @@ export const registerTeacher = async (name: string, email: string, password: str
 export const getAllTasks = async (): Promise<Task[]> => {
     try {
         const rawTasks = await apiRequest('getTasks', 'POST');
-        if (!rawTasks || !Array.isArray(rawTasks)) return [];
+        if (!rawTasks || !Array.isArray(rawTasks)) {
+            console.log("No tasks found or invalid format:", rawTasks);
+            return [];
+        }
 
         return rawTasks.map((t: any) => ({
             id: t.id ? t.id.toString() : Math.random().toString(),
@@ -396,7 +399,7 @@ export const generateTaskFlexMessage = (task: Task) => {
                 contents: [
                     {
                         type: "button",
-                        action: { type: "uri", label: "ดูรายละเอียด", uri: `https://liff.line.me/${DEFAULT_LIFF_ID}` },
+                        action: { type: "uri", label: "ดูรายละเอียด", uri: APP_URL },
                         style: "primary",
                         color: color,
                         height: "sm"
@@ -431,5 +434,14 @@ export const testLineNotification = async (token: string, userId: string, messag
 
 export const getLineLoginUrl = (channelId: string, redirectUri: string, state: string) => 
     `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${channelId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=profile openid email`;
-export const loginWithLineCode = async (code: string, redirectUri: string) => apiRequest('lineLogin', 'POST', { code, redirectUri });
+
+export const loginWithLineCode = async (code: string, redirectUri: string) => {
+    try {
+        return await apiRequest('lineLogin', 'POST', { code, redirectUri });
+    } catch (e: any) {
+        console.error("LINE Login API Fail:", e);
+        throw new Error("Cannot connect to Login Server: " + e.message);
+    }
+};
+
 export const syncLineUserProfile = async () => {};

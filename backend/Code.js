@@ -1,7 +1,7 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 12.0 (Strict JSON Force)
+ * Version: 14.0 (Sample Data Generator)
  */
 
 // --- CONFIGURATION ---
@@ -24,8 +24,7 @@ function doPost(e) { return handleRequest(e); }
 
 function handleRequest(e) {
   const lock = LockService.getScriptLock();
-  // Wait longer for lock to prevent 'Service invoked too many times'
-  const hasLock = lock.tryLock(10000); 
+  const hasLock = lock.tryLock(15000); 
   
   try {
     const params = e ? e.parameter : {};
@@ -40,14 +39,14 @@ function handleRequest(e) {
         if (parsedBody.action) action = parsedBody.action;
         if (parsedBody.sheet_id) sheetId = parsedBody.sheet_id;
       } catch (err) {
-        // Ignore JSON parse errors for body
+        // Ignore JSON parse errors
       }
     }
 
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
     if (!action) {
-      return createJSONOutput({ status: 'ok', message: 'API v12 is running.', version: '12.0' });
+      return createJSONOutput({ status: 'ok', message: 'API v14 is running.', version: '14.0' });
     }
 
     let ss;
@@ -76,7 +75,6 @@ function handleRequest(e) {
       case 'getPortfolio': 
         const allP = getData(ss, 'Portfolio');
         const sId = payload.studentId || params.studentId;
-        // Manual filter to avoid issues
         const filteredP = [];
         const targetId = String(sId).toLowerCase();
         for(var i=0; i<allP.length; i++) {
@@ -103,56 +101,32 @@ function handleRequest(e) {
 function createJSONOutput(data) {
   var jsonString = "{}";
   try {
-    // 1. Force strict object structure
     var cleanData = normalizeData(data);
-    
-    // 2. Add version for debugging
     if (typeof cleanData === 'object' && cleanData !== null && !Array.isArray(cleanData)) {
-      cleanData['_backendVersion'] = '12.0';
+      cleanData['_backendVersion'] = '14.0';
     }
-
-    // 3. Stringify
     jsonString = JSON.stringify(cleanData);
   } catch (e) {
-    jsonString = JSON.stringify({ 
-      error: "Serialization Failed", 
-      message: e.toString() 
-    });
+    jsonString = JSON.stringify({ error: "Serialization Failed", message: e.toString() });
   }
-  
-  // 4. Return TextOutput
   return ContentService.createTextOutput(jsonString).setMimeType(ContentService.MimeType.JSON);
 }
 
-/**
- * Recursively converts all values to primitive JS types.
- * This removes any Java wrappers (Date, Array, etc) that cause the [Ljava error.
- */
 function normalizeData(data) {
   if (data === null || data === undefined) return null;
-  
-  if (data instanceof Date) {
-    return data.toISOString();
-  }
-  
+  if (data instanceof Date) return data.toISOString();
   if (Array.isArray(data)) {
     var newArr = [];
-    for (var i = 0; i < data.length; i++) {
-      newArr.push(normalizeData(data[i]));
-    }
+    for (var i = 0; i < data.length; i++) newArr.push(normalizeData(data[i]));
     return newArr;
   }
-  
   if (typeof data === 'object') {
     var newObj = {};
-    for (var key in data) {
-      newObj[key] = normalizeData(data[key]);
-    }
+    for (var key in data) newObj[key] = normalizeData(data[key]);
     return newObj;
   }
-  
-  // Primitives (String, Number, Boolean)
-  return data;
+  if (typeof data === 'number' || typeof data === 'boolean') return data;
+  return String(data);
 }
 
 // === DATA ACCESS ===
@@ -160,18 +134,12 @@ function normalizeData(data) {
 function getData(ss, sheetName) {
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return [];
-  
-  const range = sheet.getDataRange();
-  const values = range.getValues(); 
-  
-  if (values.length < 2) return []; 
-  
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
   const headers = values[0];
   const rows = [];
-
   for (var i = 1; i < values.length; i++) {
     var row = values[i];
-    // Check if row is empty
     var isEmpty = true;
     for(var k=0; k<row.length; k++) { if(String(row[k]) !== "") { isEmpty = false; break; } }
     if(isEmpty) continue;
@@ -180,16 +148,12 @@ function getData(ss, sheetName) {
     for (var j = 0; j < headers.length; j++) {
       var headerName = String(headers[j]).trim().toLowerCase().replace(/\s/g, '_');
       if (!headerName) continue;
-      
       var val = row[j];
-      // Convert dates immediately
       if (val instanceof Date) val = val.toISOString();
       obj[headerName] = val;
     }
     rows.push(obj);
   }
-  
-  // Normalize implicitly happens in createJSONOutput, but good to be safe
   return rows;
 }
 
@@ -227,7 +191,6 @@ function addRow(ss, sheetName, dataObj, uniqueKey) {
     const searchValue = dataObjKey ? dataObj[dataObjKey] : null;
     
     if (searchValue) {
-      // Find row index
       const targetVal = String(searchValue).toLowerCase();
       const sheetData = sheet.getDataRange().getValues();
       const colIdx = headers.findIndex(h => String(h).toLowerCase() === searchKey);
@@ -261,7 +224,6 @@ function updateRow(ss, sheetName, id, updates, idField) {
   const data = sheet.getDataRange().getValues();
   const headers = data[0].map(h => String(h).trim().toLowerCase().replace(/\s/g, '_'));
   const idIndex = headers.indexOf(idField.toLowerCase());
-  
   if (idIndex === -1) return { success: false, message: 'ID field not found' };
   const targetId = String(id).trim();
 
@@ -323,7 +285,7 @@ function toggleTaskCompletion(ss, studentId, taskId, isCompleted) {
 function checkHealth(ss) {
   const tables = ['Students', 'Teachers', 'Tasks', 'Timetable', 'SystemSettings', 'Portfolio'];
   const status = tables.map(t => ({ name: t, status: ss.getSheetByName(t) ? 'ok' : 'missing' }));
-  return { tables: status, version: '12.0' };
+  return { tables: status, version: '14.0' };
 }
 
 function getSettings(ss) {
@@ -353,25 +315,36 @@ function saveSettings(ss, newSettings) {
 }
 
 function handleLineLogin(ss, code, redirectUri) {
-  const settings = getSettings(ss);
-  const clientId = settings['line_login_channel_id'];
-  const clientSecret = settings['line_channel_secret'];
-  if (!clientId || !clientSecret) return { success: false, message: 'Line Login Config Missing' };
-
   try {
+    const settings = getSettings(ss);
+    const clientId = settings['line_login_channel_id'];
+    const clientSecret = settings['line_channel_secret'];
+    if (!clientId || !clientSecret) return { success: false, message: 'Line Login Config Missing' };
+
     const response = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/token', {
       method: 'post', payload: {
         grant_type: 'authorization_code', code: code, redirect_uri: redirectUri,
         client_id: clientId, client_secret: clientSecret
-      }
+      },
+      muteHttpExceptions: true
     });
+    
+    if (response.getResponseCode() !== 200) {
+      return { success: false, message: 'LINE Token Error: ' + response.getContentText() };
+    }
+
     const tokenData = JSON.parse(response.getContentText());
     const profileResponse = UrlFetchApp.fetch('https://api.line.me/v2/profile', {
-      headers: { 'Authorization': 'Bearer ' + tokenData.access_token }
+      headers: { 'Authorization': 'Bearer ' + tokenData.access_token },
+      muteHttpExceptions: true
     });
+    
+    if (profileResponse.getResponseCode() !== 200) {
+      return { success: false, message: 'LINE Profile Error: ' + profileResponse.getContentText() };
+    }
+    
     const profile = JSON.parse(profileResponse.getContentText());
     
-    // Check Student
     const students = getData(ss, 'Students');
     const student = students.find(s => String(s.line_user_id) === String(profile.userId));
     if (student) {
@@ -382,14 +355,13 @@ function handleLineLogin(ss, code, redirectUri) {
       return { success: true, role: 'student', user: student, lineProfile: profile };
     }
 
-    // Check Teacher
     const teachers = getData(ss, 'Teachers');
     const teacher = teachers.find(t => String(t.line_user_id) === String(profile.userId));
     if (teacher) return { success: true, role: 'teacher', user: teacher, lineProfile: profile };
 
     return { success: false, message: 'User not registered', lineUserId: profile.userId, lineProfile: profile };
   } catch (e) {
-    return { success: false, message: 'Line API Error: ' + e.toString() };
+    return { success: false, message: 'Internal Line API Error: ' + e.toString() };
   }
 }
 
@@ -430,22 +402,40 @@ function setupSheet() {
     if (!sheet) { 
         sheet = ss.insertSheet(name); 
         sheet.appendRow(schema[name]); 
-    } else {
-        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-        const missing = schema[name].filter(col => !headers.includes(col));
-        if (missing.length > 0) {
-            sheet.getRange(1, headers.length + 1, 1, missing.length).setValues([missing]);
-        }
     }
   });
   
-  // Seed initial data if empty
+  // SEED DATA: Teachers
   const tSheet = ss.getSheetByName('Teachers');
-  if (tSheet.getLastRow() <= 1) tSheet.appendRow(['T01', 'ART (Admin)', 'admin@admin.com', '123456', '']);
+  if (tSheet.getLastRow() <= 1) {
+    tSheet.appendRow(['T01', 'ART (Admin)', 'admin@admin.com', '123456', '']);
+  }
   
+  // SEED DATA: Students
   const sSheet = ss.getSheetByName('Students');
   if (sSheet.getLastRow() <= 1) {
-    sSheet.appendRow(['std001', 'สมชาย รักเรียน', 'somchai@school.ac.th', 'ม.3', '3', '123456', '', '']);
-    sSheet.appendRow(['std002', 'สมหญิง จริงใจ', 'somying@school.ac.th', 'ม.3', '3', '123456', '', '']);
+    sSheet.appendRow(['std001', 'สมชาย รักเรียน', 'somchai@school.ac.th', 'ม.3', '3', '123456', '', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Somchai']);
+    sSheet.appendRow(['std002', 'สมหญิง จริงใจ', 'somying@school.ac.th', 'ม.3', '3', '123456', '', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Somying']);
+  }
+
+  // SEED DATA: Tasks (Dynamic Date)
+  const taskSheet = ss.getSheetByName('Tasks');
+  if (taskSheet.getLastRow() <= 1) {
+    const today = new Date();
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
+    
+    taskSheet.appendRow([
+      'task001', 'การบ้านคณิตศาสตร์ บทที่ 1', 'คณิตศาสตร์', 'ทำแบบฝึกหัดหน้า 15 ข้อ 1-10', 
+      tomorrow.toISOString(), 'HOMEWORK', 'High', 'ม.3', '3', '', 'ART (Admin)', '[]', 'FALSE', today.toISOString()
+    ]);
+    taskSheet.appendRow([
+      'task002', 'สอบเก็บคะแนนย่อย', 'ภาษาอังกฤษ', 'สอบศัพท์บทที่ 1', 
+      nextWeek.toISOString(), 'EXAM_SCHEDULE', 'Medium', 'ม.3', '3', '', 'ART (Admin)', '[]', 'FALSE', today.toISOString()
+    ]);
+     taskSheet.appendRow([
+      'task003', 'กิจกรรมลูกเสือ', 'กิจกรรมพัฒนาผู้เรียน', 'แต่งเครื่องแบบเต็มยศ', 
+      tomorrow.toISOString(), 'ACTIVITY_INSIDE', 'Low', 'ม.3', '3', '', 'ART (Admin)', '[]', 'FALSE', today.toISOString()
+    ]);
   }
 }
