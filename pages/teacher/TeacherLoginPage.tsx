@@ -1,14 +1,28 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
 import { Link, useNavigate } from 'react-router-dom';
+import { getSystemSettings, getLineLoginUrl } from '../../services/api';
 
 const TeacherLoginPage: React.FC = () => {
   const [email, setEmail] = useState('admin@admin.com');
   const [password, setPassword] = useState('123456');
   const [error, setError] = useState('');
+  const [lineLoginUrl, setLineLoginUrl] = useState('');
   const { login, loading } = useTeacherAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Setup LINE Login URL
+    const setupLine = async () => {
+        const settings = await getSystemSettings();
+        if (settings['line_login_channel_id']) {
+            const redirect = window.location.origin + window.location.pathname + '#/line-callback';
+            setLineLoginUrl(getLineLoginUrl(settings['line_login_channel_id'], redirect, 'teacher'));
+        }
+    };
+    setupLine();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,14 +37,6 @@ const TeacherLoginPage: React.FC = () => {
     } catch (err: any) {
         console.error("Login Error UI:", err);
         let msg = err.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ';
-        
-        // Translate common Supabase errors for better UX
-        if (msg.includes('Invalid login credentials')) {
-            msg = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
-        } else if (msg.includes('Email not confirmed')) {
-            msg = "อีเมลนี้ยังไม่ได้ยืนยันตัวตน";
-        }
-        
         setError(msg);
     }
   };
@@ -72,12 +78,24 @@ const TeacherLoginPage: React.FC = () => {
               {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
             </button>
           </form>
-          <p className="text-sm text-slate-600 mt-6">
-            ยังไม่มีบัญชี? <Link to="/teacher/register" className="font-semibold text-purple-600 hover:underline">ลงทะเบียนที่นี่</Link>
-          </p>
+
+           <div className="mt-4 flex flex-col gap-2">
+            {lineLoginUrl ? (
+                <a 
+                    href={lineLoginUrl}
+                    className="w-full bg-[#00C300] text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-[#00B300] transition-all flex items-center justify-center gap-2"
+                >
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 2C6.5 2 2 5.8 2 10.5c0 2.6 1.4 5 3.7 6.6.2.1.3.4.1.7-.2.6-.5 2.1-.5 2.2 0 .2.2.4.4.2.2-.1 2.3-1.4 3.2-1.9.3-.2.6-.2.9-.2.7.1 1.4.2 2.2.2 5.5 0 10-3.8 10-8.5C22 5.8 17.5 2 12 2z"/></svg>
+                    เข้าสู่ระบบด้วย LINE
+                </a>
+            ) : (
+                <p className="text-xs text-slate-400">ยังไม่เปิดใช้งาน LINE Login</p>
+            )}
+          </div>
+
            <button
                 onClick={() => navigate('/')}
-                className="mt-4 text-sm text-slate-500 hover:text-slate-700"
+                className="mt-6 text-sm text-slate-500 hover:text-slate-700"
             >
                 กลับไปหน้าหลัก
             </button>

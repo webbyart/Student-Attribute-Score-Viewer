@@ -8,17 +8,17 @@ import { syncLineUserProfile } from './services/api';
 // Page Imports
 import PublicCalendarPage from './pages/PublicCalendarPage';
 import RoleSelectionPage from './pages/RoleSelectionPage';
-import StudentSearchPage from './pages/student/StudentSearchPage'; // Acting as Login
+import StudentSearchPage from './pages/student/StudentSearchPage'; 
 import StudentRegisterPage from './pages/student/StudentRegisterPage';
 import StudentLayout from './pages/student/StudentLayout';
 import StudentDashboardPage from './pages/student/StudentDashboardPage';
-import StudentScoresPage from './pages/student/StudentScoresPage'; // Acting as Schedule/Calendar
-import StudentSummaryPage from './pages/student/StudentSummaryPage'; // Acting as Categories
+import StudentScoresPage from './pages/student/StudentScoresPage'; 
+import StudentSummaryPage from './pages/student/StudentSummaryPage';
 import TeacherLoginPage from './pages/teacher/TeacherLoginPage';
 import TeacherRegisterPage from './pages/teacher/TeacherRegisterPage';
 import TeacherDashboardPage from './pages/teacher/TeacherDashboardPage';
 import TeacherProfilePage from './pages/teacher/TeacherProfilePage';
-import BottomNavBar from './components/layout/BottomNavBar';
+import LineCallbackPage from './pages/LineCallbackPage';
 import HomeIcon from './assets/icons/HomeIcon';
 import UserCircleIcon from './assets/icons/UserCircleIcon';
 
@@ -45,7 +45,6 @@ const ProtectedTeacherRoute: React.FC = () => {
 const ProtectedStudentRoute: React.FC = () => {
   const { user, loading } = useAuth();
   
-  // Try to sync LINE ID if user is logged in via OAuth
   useEffect(() => {
      if (user) syncLineUserProfile();
   }, [user]);
@@ -55,11 +54,8 @@ const ProtectedStudentRoute: React.FC = () => {
 }
 
 const TeacherLayout: React.FC = () => {
-  const { teacher } = useTeacherAuth();
-  
   return (
     <div className="relative min-h-screen bg-slate-50">
-      {/* New Compact Top Navigation for Teachers */}
       <nav className="bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-100 sticky top-0 z-50 px-4 h-14 flex justify-between items-center">
         <div className="flex items-center gap-2">
             <span className="bg-purple-600 text-white p-1.5 rounded-lg">
@@ -105,6 +101,7 @@ const AppRoutes: React.FC = () => {
     <Routes>
       <Route path="/" element={<PublicCalendarPage />} />
       <Route path="/login-select" element={<RoleSelectionPage />} />
+      <Route path="/line-callback" element={<LineCallbackPage />} />
       
       {/* Student Flow */}
       <Route path="/student/login" element={!user ? <StudentSearchPage /> : <Navigate to={`/student/${user.student_id}`} />} />

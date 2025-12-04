@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import FileChip from '../../components/ui/FileChip';
 import { StudentData, Task, TaskCategoryLabel, getCategoryColor } from '../../types';
-import { toggleTaskStatus } from '../../services/api';
+import { toggleTaskStatus, sendCompletionNotification } from '../../services/api';
 
 type FilterType = 'all' | 'pending' | 'completed' | 'overdue';
 
@@ -20,7 +20,18 @@ const StudentScoresPage: React.FC = () => {
   const handleToggleTask = async (task: Task) => {
       const newStatus = !task.isCompleted;
       setLocalTasks(prev => prev.map(t => t.id === task.id ? { ...t, isCompleted: newStatus } : t));
-      await toggleTaskStatus(contextData.student.student_id, task.id, newStatus);
+      
+      try {
+        await toggleTaskStatus(contextData.student.student_id, task.id, newStatus);
+        
+        // Notify teacher if task completed
+        if (newStatus === true) {
+            await sendCompletionNotification(contextData.student.student_name, task.title);
+        }
+      } catch (e) {
+        // Revert on error
+        setLocalTasks(prev => prev.map(t => t.id === task.id ? { ...t, isCompleted: !newStatus } : t));
+      }
   };
 
   // Filter tasks

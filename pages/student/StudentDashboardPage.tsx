@@ -3,45 +3,39 @@ import React, { useState, useEffect } from 'react';
 import Card from '../../components/ui/Card';
 import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 import { StudentData, TaskCategory, TaskCategoryLabel, Task } from '../../types';
-import { markNotificationRead, toggleTaskStatus } from '../../services/api';
+import { markNotificationRead, toggleTaskStatus, sendCompletionNotification } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
 const StudentDashboardPage: React.FC = () => {
-  // We need local state for tasks to update UI instantly when checked
   const contextData = useOutletContext<StudentData>();
   const [localTasks, setLocalTasks] = useState<Task[]>(contextData.tasks);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<'All' | TaskCategory>('All');
-  
-  // Local state for read notifications to update UI instantly without full refresh
   const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
 
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const { student } = contextData;
 
   useEffect(() => {
     setLocalTasks(contextData.tasks);
   }, [contextData.tasks]);
 
-  const { student, notifications } = contextData;
+  const { notifications } = contextData;
 
-  // Filter tasks due in the future for notifications area
   const upcomingTasks = localTasks
     .filter(t => !t.isCompleted && new Date(t.dueDate) >= new Date())
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-    .slice(0, 3); // Show only top 3
+    .slice(0, 3); 
 
-  // Calculate unread count filtering out locally read IDs
   const unreadCount = notifications.filter(n => !n.is_read && !readNotificationIds.has(n.id)).length;
 
-  // Notification Filter Logic
   const filteredNotifications = notifications.filter(n => {
       if (notificationFilter === 'All') return true;
       const associatedTask = contextData.tasks.find(t => t.id === n.task_id);
       return associatedTask?.category === notificationFilter;
   });
 
-  // Stats Calculation
   const totalTasks = localTasks.length;
   const completedTasksCount = localTasks.filter(t => t.isCompleted).length;
   const progressPercentage = totalTasks > 0 ? Math.round((completedTasksCount / totalTasks) * 100) : 0;
@@ -65,27 +59,24 @@ const StudentDashboardPage: React.FC = () => {
       // Optimistic Update
       setLocalTasks(prev => prev.map(t => t.id === task.id ? { ...t, isCompleted: newStatus } : t));
 
-      // API Call
-      await toggleTaskStatus(student.student_id, task.id, newStatus);
+      try {
+        await toggleTaskStatus(student.student_id, task.id, newStatus);
+        
+        // Send notification to teacher if completed
+        if (newStatus === true) {
+            await sendCompletionNotification(student.student_name, task.title);
+        }
+      } catch (error) {
+        console.error("Failed to toggle task", error);
+        // Revert optimistic update on error
+        setLocalTasks(prev => prev.map(t => t.id === task.id ? { ...t, isCompleted: !newStatus } : t));
+      }
   };
 
   const handleLogout = () => {
       if(window.confirm('ต้องการออกจากระบบใช่หรือไม่?')) {
           logout();
           navigate('/login-select');
-      }
-  }
-
-  const handleShare = () => {
-      if (navigator.share) {
-          navigator.share({
-              title: `Dashboard ของ ${student.student_name}`,
-              text: `ดูผลการเรียนและภาระงานของ ${student.student_name}`,
-              url: window.location.href
-          }).catch(console.error);
-      } else {
-          navigator.clipboard.writeText(window.location.href);
-          alert('คัดลอกลิงก์แล้ว! ส่งให้เพื่อนหรือผู้ปกครองได้เลย');
       }
   }
 

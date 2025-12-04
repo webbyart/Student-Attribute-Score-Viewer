@@ -1,15 +1,29 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { getSystemSettings, getLineLoginUrl } from '../../services/api';
 
 const StudentSearchPage: React.FC = () => {
   const [studentId, setStudentId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [lineLoginUrl, setLineLoginUrl] = useState('');
   const navigate = useNavigate();
   const { login, loading } = useAuth();
+
+  useEffect(() => {
+    // Setup LINE Login URL
+    const setupLine = async () => {
+        const settings = await getSystemSettings();
+        if (settings['line_login_channel_id']) {
+            const redirect = window.location.origin + window.location.pathname + '#/line-callback';
+            setLineLoginUrl(getLineLoginUrl(settings['line_login_channel_id'], redirect, 'student'));
+        }
+    };
+    setupLine();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,19 +80,6 @@ const StudentSearchPage: React.FC = () => {
                 <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-xl text-sm text-left">
                     <p className="font-bold mb-1">เกิดข้อผิดพลาด</p>
                     <p>{error}</p>
-                    {error.includes("ไม่พบข้อมูล") && (
-                         <div className="mt-2">
-                            <span className="text-xs text-slate-500">ทดสอบระบบ? ลองใช้:</span>
-                            <ul className="text-xs text-slate-600 list-disc pl-4 mt-1">
-                                <li>ID: <b>std001</b></li>
-                                <li>Email: <b>somchai@school.ac.th</b></li>
-                                <li>Pass: <b>1234</b></li>
-                            </ul>
-                             <Link to="/student/register" className="block mt-2 text-sky-600 underline font-bold">
-                                 หรือคลิกที่นี่เพื่อลงทะเบียนใหม่
-                             </Link>
-                         </div>
-                    )}
                 </div>
             )}
             
@@ -90,6 +91,20 @@ const StudentSearchPage: React.FC = () => {
               {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
             </button>
           </form>
+
+          <div className="mt-4 flex flex-col gap-2">
+            {lineLoginUrl ? (
+                <a 
+                    href={lineLoginUrl}
+                    className="w-full bg-[#00C300] text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-[#00B300] transition-all flex items-center justify-center gap-2"
+                >
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 2C6.5 2 2 5.8 2 10.5c0 2.6 1.4 5 3.7 6.6.2.1.3.4.1.7-.2.6-.5 2.1-.5 2.2 0 .2.2.4.4.2.2-.1 2.3-1.4 3.2-1.9.3-.2.6-.2.9-.2.7.1 1.4.2 2.2.2 5.5 0 10-3.8 10-8.5C22 5.8 17.5 2 12 2z"/></svg>
+                    เข้าสู่ระบบด้วย LINE
+                </a>
+            ) : (
+                <p className="text-xs text-slate-400">ยังไม่เปิดใช้งาน LINE Login</p>
+            )}
+          </div>
 
            <p className="text-sm text-slate-600 mt-6">
             ยังไม่มีบัญชี? <Link to="/student/register" className="font-semibold text-sky-600 hover:underline">ลงทะเบียนที่นี่</Link>
