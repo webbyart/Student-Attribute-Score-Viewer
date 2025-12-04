@@ -479,23 +479,49 @@ function setupSheet() {
   
   const tSheet = ss.getSheetByName('Teachers');
   const tData = tSheet.getDataRange().getValues();
-  let adminExists = false;
-  for(let i=1; i<tData.length; i++) {
-      if(tData[i][0] == 'T01') adminExists = true;
-  }
   
-  if (!adminExists) {
-    tSheet.appendRow(['T01', 'ART', 'admin@admin.com', '123456', 'U37fa32592d34d55aa4d7190667e8d18d']);
-  }
+  // ADD ADMIN & TEACHERS DATA
+  const teachersToAdd = [
+    {id: 'T01', name: 'ART', email: 'admin@admin.com', pass: '123456', line: 'U37fa32592d34d55aa4d7190667e8d18d'},
+    {id: 'T02', name: 'ครูอิ๋ม', email: 't02@email.com', pass: '123456', line: ''}
+  ];
 
-  const sSheet = ss.getSheetByName('SystemSettings');
+  teachersToAdd.forEach(t => {
+      let exists = false;
+      for(let i=1; i<tData.length; i++) {
+        if(String(tData[i][0]) === t.id) exists = true;
+      }
+      if(!exists) {
+          tSheet.appendRow([t.id, t.name, t.email, t.pass, t.line]);
+      }
+  });
+
+  // ADD STUDENTS DATA
+  const sSheet = ss.getSheetByName('Students');
   const sData = sSheet.getDataRange().getValues();
+  const studentsToAdd = [
+      {id: 'std001', name: 'สมชาย รักเรียน', email: 'somchai@school.ac.th', grade: 'ม.3', class: '3', pass: '123456', img: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Somchai'},
+      {id: 'std002', name: 'สมหญิง จริงใจ', email: 'somying@school.ac.th', grade: 'ม.3', class: '3', pass: '123456', img: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Somying'}
+  ];
+
+  studentsToAdd.forEach(s => {
+      let exists = false;
+      for(let i=1; i<sData.length; i++) {
+        if(String(sData[i][0]) === s.id) exists = true;
+      }
+      if(!exists) {
+          sSheet.appendRow([s.id, s.name, s.email, s.grade, s.class, s.pass, '', s.img]);
+      }
+  });
+
+  const sysSheet = ss.getSheetByName('SystemSettings');
+  const sysData = sysSheet.getDataRange().getValues();
   const existingKeys = new Set();
-  for(let i=1; i<sData.length; i++) {
-     existingKeys.add(sData[i][0]);
+  for(let i=1; i<sysData.length; i++) {
+     existingKeys.add(sysData[i][0]);
   }
   
-  if (!existingKeys.has('line_channel_access_token')) sSheet.appendRow(['line_channel_access_token', DEFAULT_LINE_TOKEN]);
-  if (!existingKeys.has('test_group_id')) sSheet.appendRow(['test_group_id', DEFAULT_GROUP_ID]);
-  if (!existingKeys.has('line_login_channel_id')) sSheet.appendRow(['line_login_channel_id', '2008618173']);
+  if (!existingKeys.has('line_channel_access_token')) sysSheet.appendRow(['line_channel_access_token', DEFAULT_LINE_TOKEN]);
+  if (!existingKeys.has('test_group_id')) sysSheet.appendRow(['test_group_id', DEFAULT_GROUP_ID]);
+  if (!existingKeys.has('line_login_channel_id')) sysSheet.appendRow(['line_login_channel_id', '2008618173']);
 }

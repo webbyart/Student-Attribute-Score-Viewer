@@ -43,6 +43,14 @@ const StudentSearchPage: React.FC = () => {
     }
   };
 
+  const handleLineLoginClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (lineLoginUrl) {
+          // Force top level navigation to break out of iframes (AI Preview, etc)
+          window.top.location.href = lineLoginUrl;
+      }
+  };
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-sky-100 via-blue-100 to-indigo-100 p-4">
       <div className="w-full max-w-sm text-center">
@@ -94,13 +102,13 @@ const StudentSearchPage: React.FC = () => {
 
           <div className="mt-4 flex flex-col gap-2">
             {lineLoginUrl ? (
-                <a 
-                    href={lineLoginUrl}
+                <button 
+                    onClick={handleLineLoginClick}
                     className="w-full bg-[#00C300] text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-[#00B300] transition-all flex items-center justify-center gap-2"
                 >
                     <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 2C6.5 2 2 5.8 2 10.5c0 2.6 1.4 5 3.7 6.6.2.1.3.4.1.7-.2.6-.5 2.1-.5 2.2 0 .2.2.4.4.2.2-.1 2.3-1.4 3.2-1.9.3-.2.6-.2.9-.2.7.1 1.4.2 2.2.2 5.5 0 10-3.8 10-8.5C22 5.8 17.5 2 12 2z"/></svg>
                     เข้าสู่ระบบด้วย LINE
-                </a>
+                </button>
             ) : (
                 <p className="text-xs text-slate-400">ยังไม่เปิดใช้งาน LINE Login</p>
             )}

@@ -250,9 +250,27 @@ export const markNotificationRead = async (notificationId: string) => {
 export const getStudentDataById = async (studentId: string | undefined): Promise<StudentData | null> => {
     if (!studentId) return null;
     try {
-        // Fetch Student
-        const student = await loginStudent(studentId, '', ''); 
-        if (!student) return null;
+        // Fetch All Students directly (Do not use loginStudent here as it requires email/password)
+        const students = await apiRequest('getStudents', 'POST');
+        if (!Array.isArray(students)) return null;
+
+        // Find the specific student by ID
+        const found = students.find((s: any) => 
+            s.student_id?.toString().toLowerCase() === studentId.toLowerCase()
+        );
+
+        if (!found) return null;
+
+        const student: Student = {
+            id: found.id || found.student_id,
+            student_id: found.student_id,
+            student_name: found.student_name,
+            email: found.email,
+            grade: found.grade,
+            classroom: found.classroom,
+            profileImageUrl: found.profile_image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${found.student_id}`,
+            lineUserId: found.line_user_id
+        };
 
         // Fetch Tasks (Parallel friendly now with POST)
         const [allTasks, completions] = await Promise.all([
