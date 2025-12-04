@@ -709,7 +709,7 @@ const TeacherDashboardPage: React.FC = () => {
                                                 <input type="text" value={lineRedirectUri} readOnly className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 text-slate-500 font-mono text-xs" />
                                                 <button onClick={() => navigator.clipboard.writeText(lineRedirectUri)} className="px-3 bg-white border border-slate-200 rounded-lg text-slate-500 text-xs hover:bg-slate-50">Copy</button>
                                             </div>
-                                            <p className="text-[10px] text-slate-400 mt-1">นำ URL นี้ไปใส่ใน LINE Developers > LINE Login > Callback URL</p>
+                                            <p className="text-[10px] text-slate-400 mt-1">นำ URL นี้ไปใส่ใน LINE Developers &gt; LINE Login &gt; Callback URL</p>
                                         </div>
                                     </div>
                                 </div>
