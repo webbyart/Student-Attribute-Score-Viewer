@@ -3,12 +3,10 @@
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
  * 
  * Instructions:
- * 1. Go to https://script.google.com/
- * 2. Create a new project.
- * 3. Paste this code into Code.gs (Delete old code).
- * 4. IMPORTANT: Select 'triggerAuth' function in the toolbar and click Run to authorize UrlFetchApp.
- * 5. Run 'setupSheet' to initialize database.
- * 6. Deploy as Web App (Anyone, Me).
+ * 1. Paste this code into Code.gs
+ * 2. CRITICAL: Select function 'triggerAuth' and click Run to authorize LINE connection.
+ * 3. Run 'setupSheet' to create database tables and sample users.
+ * 4. Deploy as Web App (Anyone, Me).
  */
 
 // --- CONFIGURATION ---
@@ -19,12 +17,18 @@ const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
 
 // --- AUTH HELPER ---
 /**
- * RUN THIS FUNCTION MANUALLY IN SCRIPT EDITOR TO AUTHORIZE URL FETCH
+ * ⚠️ IMPORTANT: RUN THIS FUNCTION MANUALLY IN SCRIPT EDITOR
+ * This forces Google to ask for permission to connect to external services (LINE API).
  */
 function triggerAuth() {
-  Logger.log("Authorizing external requests...");
-  UrlFetchApp.fetch("https://www.google.com");
-  Logger.log("Authorized!");
+  Logger.log("Attempting to authorize external requests...");
+  try {
+    // This dummy call forces the authorization prompt for the scope: https://www.googleapis.com/auth/script.external_request
+    UrlFetchApp.fetch("https://www.google.com");
+    Logger.log("✅ Authorization Successful! You can now Deploy.");
+  } catch (e) {
+    Logger.log("❌ Error during auth check: " + e.toString());
+  }
 }
 
 function doGet(e) {
@@ -53,6 +57,7 @@ function handleRequest(e) {
         if (parsedBody.action) action = parsedBody.action;
         if (parsedBody.sheet_id) sheetId = parsedBody.sheet_id;
       } catch (err) {
+        // failed to parse json
       }
     }
 
@@ -63,7 +68,7 @@ function handleRequest(e) {
     if (!action) {
       return createJSONOutput({ 
         status: 'ok', 
-        message: 'API is running. Use POST with action parameter.',
+        message: 'API is running. Action parameter missing.',
         timestamp: new Date().toISOString()
       });
     }
@@ -76,7 +81,7 @@ function handleRequest(e) {
     isWrite = writeActions.includes(action);
 
     if (isWrite) {
-      const success = lock.tryLock(5000);
+      const success = lock.tryLock(5000); // Wait up to 5 seconds
       if (!success) {
         return createJSONOutput({ error: 'Server is busy (Lock Timeout). Please try again.' });
       }
@@ -86,7 +91,7 @@ function handleRequest(e) {
     try {
         ss = SpreadsheetApp.openById(sheetId);
     } catch(err) {
-        return createJSONOutput({ error: 'Could not open Spreadsheet. Check ID: ' + sheetId });
+        return createJSONOutput({ error: 'Could not open Spreadsheet. Check ID.' });
     }
 
     let result = {};
@@ -383,7 +388,7 @@ function handleLineLogin(ss, code, redirectUri) {
   const clientId = settings['line_login_channel_id'];
   const clientSecret = settings['line_channel_secret'];
 
-  if (!clientId || !clientSecret) return { success: false, message: 'Line Login Config Missing in Sheet' };
+  if (!clientId || !clientSecret) return { success: false, message: 'Line Login Config Missing in Sheet (SystemSettings)' };
 
   try {
     const tokenUrl = 'https://api.line.me/oauth2/v2.1/token';
@@ -403,6 +408,7 @@ function handleLineLogin(ss, code, redirectUri) {
     });
     const profile = JSON.parse(profileResponse.getContentText());
     
+    // Check Students
     const students = getData(ss, 'Students');
     const student = students.find(s => s.line_user_id === profile.userId);
     if (student) {
@@ -413,6 +419,7 @@ function handleLineLogin(ss, code, redirectUri) {
       return { success: true, role: 'student', user: student, lineProfile: profile };
     }
 
+    // Check Teachers
     const teachers = getData(ss, 'Teachers');
     const teacher = teachers.find(t => t.line_user_id === profile.userId);
     if (teacher) {
@@ -449,7 +456,7 @@ function sendLineMessage(ss, to, messages, tokenOverride) {
 
     return { success: true, message: 'Sent' };
   } catch (e) {
-    return { success: false, message: e.toString() };
+    return { success: false, message: 'Exception: ' + e.toString() };
   }
 }
 
