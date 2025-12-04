@@ -1,7 +1,7 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 15.0 (Strict JSON Enforcement)
+ * Version: 21.0 (No Mock Data / 100% Sheet Based)
  */
 
 const DEFAULT_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
@@ -36,7 +36,7 @@ function handleRequest(e) {
 
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
-    if (!action) return createJSONOutput({ status: 'ok', version: '15.0' });
+    if (!action) return createJSONOutput({ status: 'ok', version: '21.0' });
 
     let ss;
     try { ss = SpreadsheetApp.openById(sheetId); } 
@@ -57,6 +57,8 @@ function handleRequest(e) {
       case 'getPortfolio': result = getPortfolio(ss, payload.studentId || params.studentId); break;
       case 'registerStudent': result = addRow(ss, 'Students', payload, 'student_id'); break;
       case 'registerTeacher': result = addRow(ss, 'Teachers', payload, 'email'); break;
+      case 'deleteStudent': result = deleteRow(ss, 'Students', payload.id, 'student_id'); break;
+      case 'deleteTeacher': result = deleteRow(ss, 'Teachers', payload.id, 'teacher_id'); break;
       case 'createTask': result = addRow(ss, 'Tasks', payload, 'id'); break;
       case 'updateTask': result = updateRow(ss, 'Tasks', payload.id, payload.payload, 'id'); break;
       case 'deleteTask': result = deleteRow(ss, 'Tasks', payload.id, 'id'); break;
@@ -78,12 +80,10 @@ function handleRequest(e) {
 // === STRICT JSON OUTPUT ===
 
 function createJSONOutput(data) {
-  // Deep copy and sanitize to ensure NO Java Objects remain
   var safeData = sanitize(data);
   if (typeof safeData === 'object' && safeData !== null && !Array.isArray(safeData)) {
-    safeData['_backendVersion'] = '15.0';
+    safeData['_backendVersion'] = '21.0';
   }
-  
   var jsonString = JSON.stringify(safeData);
   return ContentService.createTextOutput(jsonString).setMimeType(ContentService.MimeType.JSON);
 }
@@ -91,26 +91,16 @@ function createJSONOutput(data) {
 function sanitize(data) {
   if (data === null || data === undefined) return null;
   if (data instanceof Date) return data.toISOString();
-  
-  // Recursively handle Arrays
   if (Array.isArray(data)) {
     var newArr = [];
-    for (var i = 0; i < data.length; i++) {
-      newArr.push(sanitize(data[i]));
-    }
+    for (var i = 0; i < data.length; i++) newArr.push(sanitize(data[i]));
     return newArr;
   }
-  
-  // Recursively handle Objects
   if (typeof data === 'object') {
     var newObj = {};
-    for (var key in data) {
-      newObj[key] = sanitize(data[key]);
-    }
+    for (var key in data) newObj[key] = sanitize(data[key]);
     return newObj;
   }
-  
-  // Primitives
   return data;
 }
 
@@ -173,7 +163,6 @@ function addRow(ss, sheetName, data, keyField) {
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) { setupSheet(); sheet = ss.getSheetByName(sheetName); }
   
-  // Check dupes
   if (keyField && data[keyField]) {
     const existing = getData(ss, sheetName);
     const target = String(data[keyField]).toLowerCase();
@@ -205,7 +194,6 @@ function updateRow(ss, sheetName, id, updates, keyField) {
   if (keyIdx === -1) return { success: false, message: 'Key not found' };
   
   const target = String(id).toLowerCase();
-  
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][keyIdx]).toLowerCase() === target) {
       for (var k in updates) {
@@ -345,11 +333,9 @@ function sendLineMessage(ss, to, messages, token) {
   }
 }
 
-function checkHealth(ss) {
-  return { version: '15.0', tables: [] };
-}
+function checkHealth(ss) { return { version: '21.0', tables: [] }; }
 
-// === SETUP ===
+// === SETUP (Headers Only - No Seed Data) ===
 
 function setupSheet() {
   const ss = SpreadsheetApp.openById(DEFAULT_SHEET_ID);
@@ -368,12 +354,5 @@ function setupSheet() {
   defineSheet('TaskCompletions', ['student_id', 'task_id', 'is_completed', 'updated_at']);
   defineSheet('Portfolio', ['id', 'student_id', 'title', 'description', 'category', 'image_url', 'date']);
   
-  // Seed
-  if (ss.getSheetByName('Tasks').getLastRow() <= 1) {
-    addRow(ss, 'Tasks', {
-      id: 'task_sample_1', title: 'การบ้านทดสอบ 1', subject: 'ทดสอบระบบ', description: 'ยินดีต้อนรับสู่ระบบ',
-      due_date: new Date().toISOString(), category: 'HOMEWORK', priority: 'Medium', target_grade: 'ม.3', target_classroom: '3', 
-      created_by: 'Admin', is_completed: 'FALSE', created_at: new Date().toISOString()
-    });
-  }
+  // NOTE: No seeding. Database starts empty.
 }

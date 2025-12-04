@@ -18,13 +18,13 @@ import {
     bulkRegisterStudents,
     registerTeacher,
     getTimetable,
-    generateTimetableFlexMessage
+    generateTimetableFlexMessage,
+    deleteUser
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor, TimetableEntry } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
 import TrashIcon from '../../assets/icons/TrashIcon';
 import PencilIcon from '../../assets/icons/PencilIcon';
-import FileChip from '../../components/ui/FileChip';
 import CalendarView from '../../components/ui/CalendarView';
 import StudentDetailModal from '../../components/ui/StudentDetailModal';
 import DayEventsModal from '../../components/ui/DayEventsModal';
@@ -52,6 +52,7 @@ const TeacherDashboardPage: React.FC = () => {
     const csvInputRef = useRef<HTMLInputElement>(null);
     const [importStatus, setImportStatus] = useState<string>('');
     const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+    const [userToDelete, setUserToDelete] = useState<string | null>(null);
     
     // Settings State
     const [lineToken, setLineToken] = useState('');
@@ -101,6 +102,7 @@ const TeacherDashboardPage: React.FC = () => {
     // Confirm Delete Modal State
     const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
     const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+    const [isConfirmDeleteUserOpen, setIsConfirmDeleteUserOpen] = useState(false);
 
     useEffect(() => {
         loadTasks();
@@ -184,7 +186,6 @@ const TeacherDashboardPage: React.FC = () => {
         };
         
         const flexMessage = generateTaskFlexMessage(dummyTask);
-        // Pass empty token string to force backend default if useDefaultToken is true
         const tokenToUse = useDefaultToken ? "" : lineToken;
         const result = await testLineNotification(tokenToUse, targetId, flexMessage);
         
@@ -195,17 +196,6 @@ const TeacherDashboardPage: React.FC = () => {
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
-    };
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            setFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
-        }
-        e.target.value = '';
-    };
-
-    const removeExistingAttachment = (filename: string) => {
-        setExistingAttachments(prev => prev.filter(f => f !== filename));
     };
 
     const handleEditTask = (task: Task) => {
@@ -296,7 +286,6 @@ const TeacherDashboardPage: React.FC = () => {
                             createdBy: teacher.name,
                             isCompleted: false
                         };
-                        // Send Notification to Line Group
                         sendLineNotification(testGroupId, fullTask)
                             .then(() => setMessage('บันทึกข้อมูลและส่งแจ้งเตือนไปยังกลุ่ม LINE แล้ว ✅'))
                             .catch(err => console.error("Auto LINE notification failed:", err));
@@ -340,7 +329,7 @@ const TeacherDashboardPage: React.FC = () => {
         }
     };
 
-    const handleAddTeacher = async (e: React.FormEvent<HTMLFormElement>) => {
+    const handleAddUser = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const formData = new FormData(e.currentTarget);
         const name = formData.get('name') as string;
@@ -349,17 +338,43 @@ const TeacherDashboardPage: React.FC = () => {
         const lineUserId = formData.get('lineUserId') as string;
         
         setIsSubmitting(true);
-        const result = await registerTeacher(name, email, password, lineUserId);
+        let result;
+        
+        if (userType === 'teacher') {
+             result = await registerTeacher(name, email, password, lineUserId);
+        } else {
+             const studentId = formData.get('student_id') as string;
+             const grade = formData.get('grade') as string;
+             const classroom = formData.get('classroom') as string;
+             result = await updateProfile('new', { // Reuse register endpoint
+                 student_id: studentId, student_name: name, email, password, grade, classroom, lineUserId
+             });
+        }
+        
         setIsSubmitting(false);
         
         if (result.success) {
-            alert('เพิ่มครู/บุคลากรสำเร็จ');
+            alert('เพิ่มผู้ใช้งานสำเร็จ');
             setIsAddUserModalOpen(false);
             loadUsers();
         } else {
             alert('เกิดข้อผิดพลาด: ' + result.message);
         }
     }
+    
+    const handleDeleteUser = async (id: string) => {
+        setUserToDelete(id);
+        setIsConfirmDeleteUserOpen(true);
+    };
+
+    const confirmDeleteUser = async () => {
+        if (userToDelete) {
+            await deleteUser(userType, userToDelete);
+            loadUsers();
+            setUserToDelete(null);
+        }
+        setIsConfirmDeleteUserOpen(false);
+    };
     
     const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -506,7 +521,6 @@ const TeacherDashboardPage: React.FC = () => {
                     </div>
                 )}
                 
-                {/* ... (rest of the component, including 'users' and 'settings' tabs, kept as is) */}
                 {activeTab === 'schedule' && (
                     <div className="animate-fade-in space-y-4">
                          <TimetableGrid 
@@ -609,45 +623,62 @@ const TeacherDashboardPage: React.FC = () => {
                     </div>
                 )}
                 
-                {/* ... (rest of the component, including 'users' and 'settings' tabs, kept as is) */}
                 {activeTab === 'users' && (
                      <div className="space-y-4 animate-fade-in">
                         <div className="flex gap-2 mb-4 bg-white p-1 rounded-xl shadow-sm border border-slate-100">
                             <button onClick={() => setUserType('student')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${userType === 'student' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>นักเรียน</button>
                             <button onClick={() => setUserType('teacher')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${userType === 'teacher' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>ครู/บุคลากร</button>
                         </div>
-                        {userType === 'student' && (
-                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 flex flex-col md:flex-row justify-between items-center gap-4">
-                                <div>
-                                    <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                                        <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                        นำเข้าข้อมูลนักเรียน (CSV)
-                                    </h3>
-                                    <input type="file" accept=".csv" onChange={handleCsvUpload} ref={csvInputRef} className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100" />
-                                </div>
-                                <div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div className="flex-1 w-full md:w-auto">
+                                <button 
+                                    onClick={() => setIsAddUserModalOpen(true)}
+                                    className="w-full bg-purple-600 text-white font-bold py-2 px-4 rounded-xl shadow-md hover:bg-purple-700 transition flex items-center justify-center gap-2 text-sm"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    เพิ่ม{userType === 'student' ? 'นักเรียน' : 'ครู'}ใหม่
+                                </button>
+                            </div>
+                            {userType === 'student' && (
+                                <div className="flex gap-2">
+                                    <div className="relative overflow-hidden">
+                                        <button className="bg-emerald-50 text-emerald-700 font-bold py-2 px-4 rounded-xl border border-emerald-100 hover:bg-emerald-100 transition flex items-center gap-2 text-sm">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                            นำเข้า CSV
+                                        </button>
+                                        <input type="file" accept=".csv" onChange={handleCsvUpload} ref={csvInputRef} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                    </div>
                                     <button 
                                         onClick={handleExportUsers} 
-                                        className="bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl shadow-md hover:bg-emerald-700 transition flex items-center gap-2 text-sm"
+                                        className="bg-slate-50 text-slate-600 font-bold py-2 px-4 rounded-xl border border-slate-200 hover:bg-slate-100 transition flex items-center gap-2 text-sm"
                                     >
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                        Export CSV
+                                        Export
                                     </button>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
+                        {importStatus && <p className="text-sm font-medium text-center bg-slate-100 p-2 rounded-lg">{importStatus}</p>}
+                        
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-100">
                                     <tr><th className="p-4">ชื่อ-นามสกุล</th><th className="p-4 text-right">จัดการ</th></tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
-                                    {filteredUsers.map(user => (
+                                    {filteredUsers.length > 0 ? filteredUsers.map(user => (
                                         <tr key={user.id} className="hover:bg-purple-50/30 transition">
                                             <td className="p-4"><div className="font-bold text-slate-800">{user.student_name || user.full_name || user.name}</div><div className="text-xs text-slate-400 font-mono mt-0.5">{user.student_id ? `ID: ${user.student_id}` : (userType === 'teacher' ? user.email : '')}</div></td>
-                                            <td className="p-4 text-right"><div className="flex justify-end gap-2">{userType === 'student' && <button onClick={() => setViewingStudentId(user.student_id)} className="text-xs font-bold text-white bg-indigo-500 px-3 py-1.5 rounded-lg hover:bg-indigo-600 transition shadow-sm">ดูข้อมูล</button>}<button onClick={() => setEditingUser(user)} className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg hover:bg-purple-100 transition border border-purple-100">แก้ไข</button></div></td>
+                                            <td className="p-4 text-right">
+                                                <div className="flex justify-end gap-2">
+                                                    {userType === 'student' && <button onClick={() => setViewingStudentId(user.student_id)} className="text-xs font-bold text-white bg-indigo-500 px-3 py-1.5 rounded-lg hover:bg-indigo-600 transition shadow-sm">ดูข้อมูล</button>}
+                                                    <button onClick={() => setEditingUser(user)} className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg hover:bg-purple-100 transition border border-purple-100">แก้ไข</button>
+                                                    <button onClick={() => handleDeleteUser(user.student_id || user.teacher_id)} className="text-xs font-bold text-red-600 bg-red-50 px-3 py-1.5 rounded-lg hover:bg-red-100 transition border border-red-100">ลบ</button>
+                                                </div>
+                                            </td>
                                         </tr>
-                                    ))}
+                                    )) : (
+                                        <tr><td colSpan={2} className="p-8 text-center text-slate-400">ไม่พบผู้ใช้งาน</td></tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -685,7 +716,6 @@ const TeacherDashboardPage: React.FC = () => {
                                                 <input type="text" value={testGroupId} onChange={(e) => setTestGroupId(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg bg-white font-mono text-xs" placeholder="Cxxxxxxxx..." />
                                                 <button onClick={() => handleTestLine(testGroupId, 'Group')} disabled={isSendingTest} className="px-3 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs hover:bg-blue-100 border border-blue-200 whitespace-nowrap">ทดสอบ</button>
                                             </div>
-                                            {/* Explicit button to test using default token */}
                                             <div className="mt-2">
                                                 <button onClick={() => handleTestLine(testGroupId, 'Group', true)} disabled={isSendingTest} className="w-full py-2 bg-slate-600 text-white rounded-lg font-bold text-xs hover:bg-slate-700 transition shadow-sm">
                                                     📢 ทดสอบส่งเข้ากลุ่ม (Default Token)
@@ -709,7 +739,7 @@ const TeacherDashboardPage: React.FC = () => {
                                                 <input type="text" value={lineRedirectUri} readOnly className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 text-slate-500 font-mono text-xs" />
                                                 <button onClick={() => navigator.clipboard.writeText(lineRedirectUri)} className="px-3 bg-white border border-slate-200 rounded-lg text-slate-500 text-xs hover:bg-slate-50">Copy</button>
                                             </div>
-                                            <p className="text-[10px] text-slate-400 mt-1">นำ URL นี้ไปใส่ใน LINE Developers > LINE Login > Callback URL</p>
+                                            <p className="text-[10px] text-slate-400 mt-1">นำ URL นี้ไปใส่ใน LINE Developers &gt; LINE Login &gt; Callback URL</p>
                                         </div>
                                     </div>
                                 </div>
@@ -743,7 +773,7 @@ const TeacherDashboardPage: React.FC = () => {
                 )}
             </div>
 
-            {/* Bottom Nav (kept as is) */}
+            {/* Bottom Nav */}
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] px-4 py-2 pb-safe z-40 flex justify-between items-end">
                 <button onClick={() => setActiveTab('calendar')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'calendar' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-600'}`}><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><span className="text-[10px] font-bold">ปฏิทิน</span></button>
                 <button onClick={() => setActiveTab('schedule')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'schedule' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span className="text-[10px] font-bold">ตาราง</span></button>
@@ -756,8 +786,11 @@ const TeacherDashboardPage: React.FC = () => {
             {/* Modals ... */}
             <ConfirmModal isOpen={isConfirmSendScheduleOpen} title="ยืนยันการส่งตารางเรียน" message={`คุณต้องการส่งตารางเรียนของชั้น ${scheduleGrade}/${scheduleClassroom} ไปยังกลุ่มไลน์ใช่หรือไม่?`} onConfirm={confirmSendSchedule} onCancel={() => setIsConfirmSendScheduleOpen(false)} confirmText="ส่งตารางเรียน" variant="success" />
             <ConfirmModal isOpen={isConfirmDeleteOpen} title="ยืนยันการลบ" message="คุณแน่ใจหรือไม่ว่าต้องการลบภาระงานนี้?" onConfirm={confirmDeleteTask} onCancel={() => setIsConfirmDeleteOpen(false)} confirmText="ลบข้อมูล" variant="danger" />
+            <ConfirmModal isOpen={isConfirmDeleteUserOpen} title="ยืนยันการลบผู้ใช้" message="คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้งานรายนี้? การกระทำนี้ไม่สามารถเรียกคืนได้" onConfirm={confirmDeleteUser} onCancel={() => setIsConfirmDeleteUserOpen(false)} confirmText="ลบผู้ใช้งาน" variant="danger" />
+            
             {isDayModalOpen && selectedDate && <DayEventsModal date={selectedDate} tasks={selectedDayTasks} onClose={() => setIsDayModalOpen(false)} onTaskClick={handleTaskClickFromModal} />}
             {selectedTaskForModal && <TaskDetailModal task={selectedTaskForModal} onClose={() => setSelectedTaskForModal(null)} />}
+            
             {editingUser && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
@@ -773,15 +806,31 @@ const TeacherDashboardPage: React.FC = () => {
                     </div>
                 </div>
             )}
+            
             {/* Add User Modal */}
             {isAddUserModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
-                         <div className="p-4 bg-purple-600 text-white flex justify-between items-center"><h3 className="font-bold text-lg">➕ เพิ่มครู/บุคลากร</h3><button onClick={() => setIsAddUserModalOpen(false)} className="p-1 hover:bg-white/20 rounded-full transition">✕</button></div>
-                         <form onSubmit={handleAddTeacher} className="p-6 space-y-3">
-                             <div><label className="block text-xs font-bold text-slate-500 mb-1">ชื่อ-นามสกุล</label><input name="name" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
-                             <div><label className="block text-xs font-bold text-slate-500 mb-1">อีเมล</label><input name="email" type="email" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                         <div className="p-4 bg-purple-600 text-white flex justify-between items-center"><h3 className="font-bold text-lg">➕ เพิ่ม{userType === 'student' ? 'นักเรียน' : 'ครู'}ใหม่</h3><button onClick={() => setIsAddUserModalOpen(false)} className="p-1 hover:bg-white/20 rounded-full transition">✕</button></div>
+                         <form onSubmit={handleAddUser} className="p-6 space-y-3">
+                             {userType === 'student' ? (
+                                 <>
+                                     <div><label className="block text-xs font-bold text-slate-500 mb-1">รหัสนักเรียน</label><input name="student_id" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                                     <div><label className="block text-xs font-bold text-slate-500 mb-1">ชื่อ-นามสกุล</label><input name="name" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                                     <div><label className="block text-xs font-bold text-slate-500 mb-1">อีเมล</label><input name="email" type="email" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                                     <div className="flex gap-2">
+                                         <div><label className="block text-xs font-bold text-slate-500 mb-1">ชั้น</label><input name="grade" defaultValue="ม.3" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                                         <div><label className="block text-xs font-bold text-slate-500 mb-1">ห้อง</label><input name="classroom" defaultValue="3" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                                     </div>
+                                 </>
+                             ) : (
+                                 <>
+                                    <div><label className="block text-xs font-bold text-slate-500 mb-1">ชื่อ-นามสกุล</label><input name="name" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                                    <div><label className="block text-xs font-bold text-slate-500 mb-1">อีเมล</label><input name="email" type="email" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                                 </>
+                             )}
                              <div><label className="block text-xs font-bold text-slate-500 mb-1">รหัสผ่าน</label><input name="password" type="password" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
+                             <input type="hidden" name="lineUserId" />
                              <button type="submit" disabled={isSubmitting} className="w-full mt-4 bg-purple-600 text-white font-bold py-3 rounded-xl hover:bg-purple-700 transition">{isSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}</button>
                          </form>
                     </div>

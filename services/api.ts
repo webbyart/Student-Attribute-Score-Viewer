@@ -3,7 +3,7 @@ import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Timeta
 
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-// IMPORTANT: You MUST Deploy "Version 15" of your script and paste the new URL here.
+// IMPORTANT: You MUST Deploy "Version 21" of your script and paste the new URL here.
 export const API_URL = 'https://script.google.com/macros/s/AKfycbxZYRRPXPYeq7E__XBu7N8uSovxJuiOQpQxl9AtaciToBBzL6EAsTTAQg0HQ6FBQ3U_/exec'; 
 
 const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
@@ -30,18 +30,22 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
     const queryParams = new URLSearchParams({
         action,
         sheet_id: GOOGLE_SHEET_ID,
-        _t: new Date().getTime().toString()
+        _t: new Date().getTime().toString(),
+        ...payload // Pass simple payload items as query params for GET
     });
 
     const url = `${API_URL}?${queryParams.toString()}`;
     const bodyData = { action, sheet_id: GOOGLE_SHEET_ID, payload: payload, ...payload };
 
     const options: RequestInit = {
-        method: 'POST',
+        method: method,
         redirect: 'follow',
-        body: JSON.stringify(bodyData),
         headers: { 'Content-Type': 'text/plain;charset=utf-8' }
     };
+    
+    if (method === 'POST') {
+        options.body = JSON.stringify(bodyData);
+    }
 
     let attempts = 0;
     const maxAttempts = 2;
@@ -54,19 +58,19 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
             const text = await response.text();
             
             if (text.startsWith('[Ljava') || text.includes('Unexpected token') || text.includes('Ljava.lang')) {
-                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v15) of the Script.");
-                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v15)." };
+                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v21) of the Script.");
+                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v21)." };
             }
 
             try {
                 const data = JSON.parse(text);
                 if (data.error) throw new Error(data.error);
-                if (data._backendVersion !== '15.0') console.warn("WARNING: Backend version mismatch. Expected v15.0, got " + (data._backendVersion || 'Unknown'));
+                if (data._backendVersion !== '21.0') console.warn("WARNING: Backend version mismatch. Expected v21.0, got " + (data._backendVersion || 'Unknown'));
                 return Array.isArray(data) ? data.map(normalizeKeys) : normalizeKeys(data);
             } catch (e: any) {
                 console.error("JSON Parse Error:", e.message, "Response:", text.substring(0, 100));
                 if (action.startsWith('get')) return [];
-                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v15).");
+                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v21).");
             }
         } catch (error: any) {
             attempts++;
@@ -83,7 +87,7 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
 
 export const loginStudent = async (studentId: string, email: string, password?: string): Promise<Student | null> => {
     try {
-        const students = await apiRequest('getStudents', 'POST'); 
+        const students = await apiRequest('getStudents', 'GET'); 
         if (!Array.isArray(students)) return null;
 
         const found = students.find((s: any) => {
@@ -114,7 +118,7 @@ export const loginStudent = async (studentId: string, email: string, password?: 
 
 export const loginTeacher = async (email: string, password: string): Promise<Teacher | null> => {
     try {
-        const teachers = await apiRequest('getTeachers', 'POST');
+        const teachers = await apiRequest('getTeachers', 'GET');
         const inputEmail = email.trim().toLowerCase();
         const inputPass = password.trim();
 
@@ -138,11 +142,16 @@ export const registerStudent = async (data: any) => apiRequest('registerStudent'
 export const registerTeacher = async (name: string, email: string, password: string, lineUserId?: string) => 
     apiRequest('registerTeacher', 'POST', { name, email, password, lineUserId });
 
+export const deleteUser = async (role: 'student' | 'teacher', id: string) => {
+    const endpoint = role === 'student' ? 'deleteStudent' : 'deleteTeacher';
+    return await apiRequest(endpoint, 'POST', { id });
+};
+
 // --- DATA SERVICES ---
 
 export const getAllTasks = async (): Promise<Task[]> => {
     try {
-        const rawTasks = await apiRequest('getTasks', 'POST');
+        const rawTasks = await apiRequest('getTasks', 'GET');
         if (!rawTasks || !Array.isArray(rawTasks)) {
             console.log("No tasks found or invalid format:", rawTasks);
             return [];
@@ -172,7 +181,7 @@ export const getAllTasks = async (): Promise<Task[]> => {
 
 export const getStudentCompletions = async (studentId: string) => {
     try {
-        const res = await apiRequest('getTaskCompletions', 'POST', { studentId });
+        const res = await apiRequest('getTaskCompletions', 'GET', { studentId });
         return Array.isArray(res) ? res : [];
     } catch (e) {
         return [];
@@ -189,7 +198,7 @@ export const markNotificationRead = async (notificationId: string) => ({ success
 // --- PORTFOLIO SERVICES ---
 export const getPortfolio = async (studentId: string): Promise<PortfolioItem[]> => {
     try {
-        const raw = await apiRequest('getPortfolio', 'POST', { studentId });
+        const raw = await apiRequest('getPortfolio', 'GET', { studentId });
         if (!Array.isArray(raw)) return [];
         return raw.map((item: any) => ({
             id: item.id,
@@ -210,7 +219,7 @@ export const deletePortfolioItem = async (id: string) => apiRequest('deletePortf
 export const getStudentDataById = async (studentId: string | undefined): Promise<StudentData | null> => {
     if (!studentId) return null;
     try {
-        const students = await apiRequest('getStudents', 'POST');
+        const students = await apiRequest('getStudents', 'GET');
         if (!Array.isArray(students)) return null;
         const found = students.find((s: any) => s.student_id?.toString().toLowerCase() === studentId.toLowerCase());
         if (!found) return null;
@@ -251,7 +260,7 @@ export const getStudentDataById = async (studentId: string | undefined): Promise
 };
 
 export const getProfiles = async (role: 'student' | 'teacher') => {
-    const res = await apiRequest(role === 'student' ? 'getStudents' : 'getTeachers', 'POST');
+    const res = await apiRequest(role === 'student' ? 'getStudents' : 'getTeachers', 'GET');
     return Array.isArray(res) ? res : [];
 };
 export const updateProfile = async (id: string, data: any) => apiRequest('registerStudent', 'POST', data); 
@@ -267,7 +276,7 @@ export const uploadFile = async (file: File): Promise<string> =>
     new Promise((resolve) => setTimeout(() => resolve(`https://via.placeholder.com/300?text=${encodeURIComponent(file.name)}`), 1000));
 export const getTimetable = async (grade: string, classroom: string) => {
     try {
-        const all = await apiRequest('getTimetable', 'POST');
+        const all = await apiRequest('getTimetable', 'GET');
         if (!Array.isArray(all)) return [];
         return all.filter((t: any) => t.grade === grade && t.classroom?.toString() === classroom).map((t: any) => ({
             id: t.id || Math.random().toString(), grade: t.grade, classroom: t.classroom,
@@ -286,7 +295,7 @@ export const checkDatabaseHealth = async () => {
 // --- Settings ---
 export const getSystemSettings = async (): Promise<Record<string, string>> => {
     try {
-        const settings = await apiRequest('getSystemSettings', 'POST');
+        const settings = await apiRequest('getSystemSettings', 'GET');
         const final = { ...settings };
         if (!final['line_channel_access_token']) final['line_channel_access_token'] = DEFAULT_LINE_TOKEN;
         if (!final['test_group_id']) final['test_group_id'] = DEFAULT_GROUP_ID;
