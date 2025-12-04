@@ -1,7 +1,7 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 23.0 (Strict JSON Enforcement)
+ * Version: 24.0 (Fix Import/Export Error)
  */
 
 const DEFAULT_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
@@ -39,7 +39,7 @@ function handleRequest(e) {
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
     // Version Check / Health Check
-    if (!action) return createJSONOutput({ status: 'ok', version: '23.0' });
+    if (!action) return createJSONOutput({ status: 'ok', version: '24.0' });
 
     let ss;
     try { ss = SpreadsheetApp.openById(sheetId); } 
@@ -88,7 +88,7 @@ function createJSONOutput(data) {
   
   // 2. Add Version Tag if object
   if (typeof safeData === 'object' && safeData !== null && !Array.isArray(safeData)) {
-    safeData['_backendVersion'] = '23.0';
+    safeData['_backendVersion'] = '24.0';
   }
   
   // 3. Stringify
@@ -373,7 +373,7 @@ function sendLineMessage(ss, to, messages, token) {
   }
 }
 
-function checkHealth(ss) { return { version: '23.0', tables: [] }; }
+function checkHealth(ss) { return { version: '24.0', tables: [] }; }
 
 // === SETUP (Headers Only - No Seed Data) ===
 

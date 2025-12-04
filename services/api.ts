@@ -3,8 +3,8 @@ import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Timeta
 
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-// IMPORTANT: You MUST Deploy "Version 23.0" of your script and paste the new URL here.
-export const API_URL = 'https://script.google.com/macros/s/AKfycbxZYRRPXPYeq7E__XBu7N8uSovxJuiOQpQxl9AtaciToBBzL6EAsTTAQg0HQ6FBQ3U_/exec'; 
+// IMPORTANT: You MUST Deploy "Version 24.0" of your script and paste the new URL here.
+export const API_URL = 'https://script.google.com/macros/s/AKfycbwupL_oe1BtETe00kwZWeSCSs90DaCwrP8zAGHqqOu0NOiyVSUPqM7aSNFXotha8rtr/exec'; 
 
 const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
@@ -58,19 +58,19 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
             const text = await response.text();
             
             if (text.startsWith('[Ljava') || text.includes('Unexpected token') || text.includes('Ljava.lang')) {
-                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v23.0) of the Script.");
-                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v23.0)." };
+                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v24.0) of the Script.");
+                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v24.0)." };
             }
 
             try {
                 const data = JSON.parse(text);
                 if (data.error) throw new Error(data.error);
-                if (data._backendVersion !== '23.0') console.warn("WARNING: Backend version mismatch. Expected v23.0, got " + (data._backendVersion || 'Unknown'));
+                if (data._backendVersion !== '24.0') console.warn("WARNING: Backend version mismatch. Expected v24.0, got " + (data._backendVersion || 'Unknown'));
                 return Array.isArray(data) ? data.map(normalizeKeys) : normalizeKeys(data);
             } catch (e: any) {
                 console.error("JSON Parse Error:", e.message, "Response:", text.substring(0, 100));
                 if (action.startsWith('get')) return [];
-                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v23.0).");
+                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v24.0).");
             }
         } catch (error: any) {
             attempts++;
