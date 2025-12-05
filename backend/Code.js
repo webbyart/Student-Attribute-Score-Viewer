@@ -1,12 +1,10 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 24.0 (Fix Import/Export Error)
+ * Version: 25.4 (Added LINE Login Support)
  */
 
 const DEFAULT_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
-const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
 
 function triggerAuth() {
   UrlFetchApp.fetch("https://www.google.com");
@@ -25,7 +23,6 @@ function handleRequest(e) {
     let action = params.action;
     let sheetId = params.sheet_id || DEFAULT_SHEET_ID;
 
-    // Parse POST body if available
     if (e && e.postData && e.postData.contents) {
       try {
         const json = JSON.parse(e.postData.contents);
@@ -35,11 +32,9 @@ function handleRequest(e) {
       } catch (err) {}
     }
 
-    // Merge params into payload if empty
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
-    // Version Check / Health Check
-    if (!action) return createJSONOutput({ status: 'ok', version: '24.0' });
+    if (!action) return createJSONOutput({ status: 'ok', version: '25.4' });
 
     let ss;
     try { ss = SpreadsheetApp.openById(sheetId); } 
@@ -50,8 +45,6 @@ function handleRequest(e) {
       case 'checkHealth': result = checkHealth(ss); break;
       case 'getSystemSettings': result = getSettings(ss); break;
       case 'saveSystemSettings': result = saveSettings(ss, payload); break;
-      case 'sendLineMessage': result = sendLineMessage(ss, payload.to, payload.messages, payload.token); break;
-      case 'lineLogin': result = handleLineLogin(ss, payload.code, payload.redirectUri); break;
       case 'getStudents': result = getData(ss, 'Students'); break;
       case 'getTeachers': result = getData(ss, 'Teachers'); break;
       case 'getTasks': result = getData(ss, 'Tasks'); break;
@@ -59,7 +52,7 @@ function handleRequest(e) {
       case 'getTimetable': result = getData(ss, 'Timetable'); break;
       case 'getPortfolio': result = getPortfolio(ss, payload.studentId || params.studentId); break;
       case 'registerStudent': result = addRow(ss, 'Students', payload, 'student_id'); break;
-      case 'registerTeacher': result = addRow(ss, 'Teachers', payload, 'email'); break;
+      case 'registerTeacher': result = addRow(ss, 'Teachers', payload, 'teacher_id'); break; 
       case 'deleteStudent': result = deleteRow(ss, 'Students', payload.id, 'student_id'); break;
       case 'deleteTeacher': result = deleteRow(ss, 'Teachers', payload.id, 'teacher_id'); break;
       case 'createTask': result = addRow(ss, 'Tasks', payload, 'id'); break;
@@ -68,6 +61,7 @@ function handleRequest(e) {
       case 'toggleTaskStatus': result = toggleTaskCompletion(ss, payload.studentId, payload.taskId, payload.isCompleted); break;
       case 'addPortfolioItem': result = addRow(ss, 'Portfolio', payload, 'id'); break;
       case 'deletePortfolioItem': result = deleteRow(ss, 'Portfolio', payload.id, 'id'); break;
+      case 'loginWithLine': result = loginWithLine(ss, payload.code, payload.redirectUri); break;
       default: result = { error: 'Unknown Action: ' + action };
     }
 
@@ -80,33 +74,16 @@ function handleRequest(e) {
   }
 }
 
-// === STRICT JSON OUTPUT ===
-
 function createJSONOutput(data) {
-  // 1. Sanitize Data (Remove Java Objects)
   var safeData = sanitize(data);
-  
-  // 2. Add Version Tag if object
-  if (typeof safeData === 'object' && safeData !== null && !Array.isArray(safeData)) {
-    safeData['_backendVersion'] = '24.0';
-  }
-  
-  // 3. Stringify
-  var jsonString = JSON.stringify(safeData);
-  
-  // 4. Return as JSON MimeType
-  return ContentService.createTextOutput(jsonString).setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify(safeData)).setMimeType(ContentService.MimeType.JSON);
 }
 
 function sanitize(data) {
   if (data === null || data === undefined) return null;
-  
-  // Handle Date specifically
   if (Object.prototype.toString.call(data) === '[object Date]' || data instanceof Date) {
     return data.toISOString();
   }
-  
-  // Handle Arrays (Recursive)
   if (Array.isArray(data)) {
     var newArr = [];
     for (var i = 0; i < data.length; i++) {
@@ -114,8 +91,6 @@ function sanitize(data) {
     }
     return newArr;
   }
-  
-  // Handle Objects (Recursive)
   if (typeof data === 'object') {
     var newObj = {};
     for (var key in data) {
@@ -125,51 +100,46 @@ function sanitize(data) {
     }
     return newObj;
   }
-  
-  // Return Primitives (String, Number, Boolean)
   return data;
 }
-
-// === DB OPERATIONS ===
 
 function getData(ss, sheetName) {
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return [];
-  
   const range = sheet.getDataRange();
-  const values = range.getValues(); // This returns Java Objects sometimes
-  
+  const values = range.getValues();
   if (values.length < 2) return [];
-  
   const headers = values[0].map(function(h) { 
     return String(h).trim().toLowerCase().replace(/\s/g, '_'); 
   });
-  
   const result = [];
   for (var i = 1; i < values.length; i++) {
     var row = values[i];
-    
-    // Check empty row
     var isEmpty = true;
-    for(var k=0; k<row.length; k++) {
-      if(String(row[k]) !== "") { isEmpty = false; break; }
-    }
+    for(var k=0; k<row.length; k++) { if(String(row[k]) !== "") { isEmpty = false; break; } }
     if (isEmpty) continue;
-    
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
       if (!headers[j]) continue;
-      // Force conversion to primitive using String() unless it's null
       var cellVal = row[j];
-      if (cellVal instanceof Date) {
-        obj[headers[j]] = cellVal.toISOString();
-      } else {
-        obj[headers[j]] = cellVal; 
+      
+      // --- FIX FOR JAVA OBJECT STRINGS ---
+      // If cell contains [Ljava.lang.Object..., force it to clean value
+      if (typeof cellVal === 'string' && cellVal.indexOf('Ljava.lang.Object') !== -1) {
+          if (headers[j] === 'attachments') {
+             obj[headers[j]] = '[]'; // Valid empty JSON array
+          } else {
+             obj[headers[j]] = '';
+          }
+      } else if (cellVal instanceof Date) { 
+          obj[headers[j]] = cellVal.toISOString(); 
+      } else { 
+          obj[headers[j]] = cellVal; 
       }
     }
     result.push(obj);
   }
-  return result; // sanitize() will be called on this result later
+  return result;
 }
 
 function getPortfolio(ss, studentId) {
@@ -178,9 +148,7 @@ function getPortfolio(ss, studentId) {
   const target = String(studentId).toLowerCase();
   const filtered = [];
   for(var i=0; i<all.length; i++) {
-    if (String(all[i].student_id).toLowerCase() === target) {
-      filtered.push(all[i]);
-    }
+    if (String(all[i].student_id).toLowerCase() === target) filtered.push(all[i]);
   }
   return filtered;
 }
@@ -218,7 +186,8 @@ function addRow(ss, sheetName, data, keyField) {
   for (var i = 0; i < headers.length; i++) {
     var h = String(headers[i]).trim().toLowerCase().replace(/\s/g, '_');
     var val = data[h] !== undefined ? data[h] : '';
-    if (Array.isArray(val) || typeof val === 'object') val = JSON.stringify(val);
+    // Prevent Java Object creation by stringifying arrays/objects before writing
+    if (Array.isArray(val) || (typeof val === 'object' && val !== null)) val = JSON.stringify(val);
     row.push(val);
   }
   sheet.appendRow(row);
@@ -230,7 +199,6 @@ function updateRow(ss, sheetName, id, updates, keyField) {
   const data = sheet.getDataRange().getValues();
   const headers = data[0].map(function(h){ return String(h).trim().toLowerCase().replace(/\s/g, '_'); });
   const keyIdx = headers.indexOf(keyField);
-  
   if (keyIdx === -1) return { success: false, message: 'Key not found' };
   
   const target = String(id).toLowerCase();
@@ -240,7 +208,7 @@ function updateRow(ss, sheetName, id, updates, keyField) {
         var colIdx = headers.indexOf(k);
         if (colIdx > -1) {
           var val = updates[k];
-          if (Array.isArray(val) || typeof val === 'object') val = JSON.stringify(val);
+          if (Array.isArray(val) || (typeof val === 'object' && val !== null)) val = JSON.stringify(val);
           sheet.getRange(i + 1, colIdx + 1).setValue(val);
         }
       }
@@ -256,7 +224,6 @@ function deleteRow(ss, sheetName, id, keyField) {
   const headers = data[0].map(function(h){ return String(h).trim().toLowerCase().replace(/\s/g, '_'); });
   const keyIdx = headers.indexOf(keyField);
   const target = String(id).toLowerCase();
-
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][keyIdx]).toLowerCase() === target) {
       sheet.deleteRow(i + 1);
@@ -269,11 +236,9 @@ function deleteRow(ss, sheetName, id, keyField) {
 function toggleTaskCompletion(ss, sId, tId, isComp) {
   var sheet = ss.getSheetByName('TaskCompletions');
   if (!sheet) { sheet = ss.insertSheet('TaskCompletions'); sheet.appendRow(['student_id','task_id','is_completed','updated_at']); }
-  
   const data = sheet.getDataRange().getValues();
   const tsId = String(sId).toLowerCase();
   const ttId = String(tId).toLowerCase();
-  
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).toLowerCase() === tsId && String(data[i][1]).toLowerCase() === ttId) {
       sheet.getRange(i+1, 3).setValue(String(isComp));
@@ -283,8 +248,6 @@ function toggleTaskCompletion(ss, sId, tId, isComp) {
   sheet.appendRow([sId, tId, String(isComp), new Date()]);
   return { success: true };
 }
-
-// === SETTINGS & LINE ===
 
 function getSettings(ss) {
   const sheet = ss.getSheetByName('SystemSettings');
@@ -301,7 +264,6 @@ function saveSettings(ss, payload) {
   const data = sheet.getDataRange().getValues();
   const map = {};
   for(var i=1; i<data.length; i++) map[data[i][0]] = i+1;
-  
   for(var k in payload) {
     if(map[k]) sheet.getRange(map[k], 2).setValue(payload[k]);
     else { sheet.appendRow([k, payload[k]]); map[k] = sheet.getLastRow(); }
@@ -309,73 +271,66 @@ function saveSettings(ss, payload) {
   return { success: true };
 }
 
-function handleLineLogin(ss, code, redirectUri) {
-  try {
-    const settings = getSettings(ss);
-    const clientId = settings['line_login_channel_id'];
-    const clientSecret = settings['line_channel_secret'];
-    
-    if (!clientId || !clientSecret) return { success: false, message: 'Missing LINE Config' };
+function loginWithLine(ss, code, redirectUri) {
+  const props = PropertiesService.getScriptProperties();
+  const CHANNEL_ID = props.getProperty('LINE_CHANNEL_ID');
+  const CHANNEL_SECRET = props.getProperty('LINE_CHANNEL_SECRET');
 
-    const tokenResp = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/token', {
+  if (!CHANNEL_ID || !CHANNEL_SECRET) {
+    return { success: false, message: 'LINE Login not configured (Missing Channel ID/Secret in Script Properties)' };
+  }
+
+  try {
+    const tokenUrl = 'https://api.line.me/oauth2/v2.1/token';
+    const payload = {
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: redirectUri,
+      client_id: CHANNEL_ID,
+      client_secret: CHANNEL_SECRET
+    };
+    
+    const options = {
       method: 'post',
-      payload: {
-        grant_type: 'authorization_code', code: code, redirect_uri: redirectUri,
-        client_id: clientId, client_secret: clientSecret
-      },
+      payload: payload,
       muteHttpExceptions: true
-    });
+    };
     
-    if (tokenResp.getResponseCode() !== 200) return { success: false, message: 'Token Error: ' + tokenResp.getContentText() };
-    
-    const token = JSON.parse(tokenResp.getContentText());
-    const profileResp = UrlFetchApp.fetch('https://api.line.me/v2/profile', {
-      headers: { 'Authorization': 'Bearer ' + token.access_token }
-    });
-    
-    const profile = JSON.parse(profileResp.getContentText());
-    
-    // Sync
-    const students = getData(ss, 'Students');
-    const student = students.find(function(s){ return String(s.line_user_id) === String(profile.userId); });
-    
-    if (student) {
-      if(student.profile_image !== profile.pictureUrl) {
-         updateRow(ss, 'Students', student.student_id, { profile_image: profile.pictureUrl }, 'student_id');
-      }
-      return { success: true, role: 'student', user: student, lineProfile: profile };
+    const tokenResp = UrlFetchApp.fetch(tokenUrl, options);
+    if (tokenResp.getResponseCode() !== 200) {
+      return { success: false, message: 'LINE Token Error: ' + tokenResp.getContentText() };
     }
     
-    const teachers = getData(ss, 'Teachers');
-    const teacher = teachers.find(function(t){ return String(t.line_user_id) === String(profile.userId); });
-    if(teacher) return { success: true, role: 'teacher', user: teacher, lineProfile: profile };
-
-    return { success: false, message: 'User not found', lineUserId: profile.userId, lineProfile: profile };
-  } catch(e) {
-    return { success: false, message: String(e) };
+    const tokenData = JSON.parse(tokenResp.getContentText());
+    const accessToken = tokenData.access_token;
+    
+    const profileUrl = 'https://api.line.me/v2/profile';
+    const profileResp = UrlFetchApp.fetch(profileUrl, { headers: { 'Authorization': 'Bearer ' + accessToken } });
+    const profileData = JSON.parse(profileResp.getContentText());
+    const userId = profileData.userId;
+    
+    // Check Students
+    const students = getData(ss, 'Students');
+    let user = students.find(function(s) { return String(s.line_user_id) === String(userId); });
+    let role = 'student';
+    
+    if (!user) {
+      const teachers = getData(ss, 'Teachers');
+      user = teachers.find(function(t) { return String(t.line_user_id) === String(userId); });
+      if (user) role = 'teacher';
+    }
+    
+    if (user) {
+      return { success: true, user: user, role: role, lineProfile: { userId: userId, displayName: profileData.displayName, pictureUrl: profileData.pictureUrl } };
+    } else {
+      return { success: false, lineUserId: userId, lineProfile: { userId: userId, displayName: profileData.displayName, pictureUrl: profileData.pictureUrl }, message: 'User not registered' };
+    }
+  } catch (e) {
+    return { success: false, message: 'Error: ' + e.toString() };
   }
 }
 
-function sendLineMessage(ss, to, messages, token) {
-  const settings = getSettings(ss);
-  const accToken = token || settings['line_channel_access_token'];
-  if (!accToken) return { success: false, message: 'No Token' };
-  
-  try {
-    UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
-      method: 'post',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + accToken },
-      payload: JSON.stringify({ to: to, messages: messages })
-    });
-    return { success: true };
-  } catch(e) {
-    return { success: false, message: String(e) };
-  }
-}
-
-function checkHealth(ss) { return { version: '24.0', tables: [] }; }
-
-// === SETUP (Headers Only - No Seed Data) ===
+function checkHealth(ss) { return { version: '25.4', tables: [] }; }
 
 function setupSheet() {
   const ss = SpreadsheetApp.openById(DEFAULT_SHEET_ID);
@@ -386,13 +341,11 @@ function setupSheet() {
     return s;
   };
   
-  defineSheet('Students', ['student_id', 'student_name', 'email', 'grade', 'classroom', 'password', 'line_user_id', 'profile_image']);
+  defineSheet('Students', ['student_id', 'student_name', 'email', 'grade', 'classroom', 'password', 'profile_image', 'line_user_id']);
   defineSheet('Teachers', ['teacher_id', 'name', 'email', 'password', 'line_user_id']);
   defineSheet('Tasks', ['id', 'title', 'subject', 'description', 'due_date', 'category', 'priority', 'target_grade', 'target_classroom', 'target_student_id', 'created_by', 'attachments', 'is_completed', 'created_at']);
   defineSheet('Timetable', ['id', 'grade', 'classroom', 'day_of_week', 'period_index', 'period_time', 'subject', 'teacher', 'room']);
   defineSheet('SystemSettings', ['key', 'value']);
   defineSheet('TaskCompletions', ['student_id', 'task_id', 'is_completed', 'updated_at']);
   defineSheet('Portfolio', ['id', 'student_id', 'title', 'description', 'category', 'image_url', 'date']);
-  
-  // NOTE: No seeding. Database starts empty.
 }

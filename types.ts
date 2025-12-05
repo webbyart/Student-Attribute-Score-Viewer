@@ -151,3 +151,18 @@ export interface PortfolioItem {
     imageUrl: string;
     date: string;
 }
+
+export interface LineProfile {
+    userId: string;
+    displayName: string;
+    pictureUrl?: string;
+}
+
+export interface LineLoginResult {
+    success: boolean;
+    message: string;
+    user?: any;
+    role?: 'student' | 'teacher';
+    lineProfile?: LineProfile;
+    lineUserId?: string;
+}

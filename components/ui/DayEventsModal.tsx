@@ -28,17 +28,24 @@ const DayEventsModal: React.FC<DayEventsModalProps> = ({ date, tasks, onClose, o
             {tasks.length > 0 ? (
                 tasks.map(task => {
                     const colors = getCategoryColor(task.category);
+                    const isCompleted = task.isCompleted;
                     return (
-                        <div key={task.id} onClick={() => onTaskClick(task)} className={`bg-white p-3 rounded-xl shadow-sm border-l-4 ${colors.border.replace('border', 'border-l')} active:scale-95 transition cursor-pointer hover:shadow-md`}>
-                            <div className="flex justify-between items-start">
+                        <div key={task.id} onClick={() => onTaskClick(task)} className={`bg-white p-3 rounded-xl shadow-sm border-l-[6px] ${colors.border.replace('border', 'border-l')} active:scale-95 transition cursor-pointer hover:shadow-md relative overflow-hidden`}>
+                            {/* Tint background slightly with category color */}
+                            <div className={`absolute inset-0 ${colors.bg} opacity-20 pointer-events-none`}></div>
+                            
+                            <div className="flex justify-between items-start relative z-10">
                                 <div className="flex-1 min-w-0 pr-2">
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded mb-1 inline-block ${colors.bg} ${colors.text}`}>
-                                        {TaskCategoryLabel[task.category] || task.category}
-                                    </span>
-                                    <h3 className="font-bold text-slate-800 text-sm truncate">{task.title}</h3>
+                                    <div className="flex items-center gap-2 mb-1">
+                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${colors.bg} ${colors.text} border ${colors.border}`}>
+                                            {TaskCategoryLabel[task.category] || task.category}
+                                        </span>
+                                        {isCompleted && <span className="text-[10px] font-bold text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full">✓ เสร็จแล้ว</span>}
+                                    </div>
+                                    <h3 className={`font-bold text-sm truncate ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{task.title}</h3>
                                     <p className="text-xs text-slate-500 truncate">{task.subject}</p>
                                 </div>
-                                <span className="text-xs font-bold text-slate-400 whitespace-nowrap">
+                                <span className={`text-xs font-bold whitespace-nowrap ${isCompleted ? 'text-slate-300' : 'text-slate-500'}`}>
                                     {new Date(task.dueDate).toLocaleTimeString('th-TH', { hour: '2-digit', minute:'2-digit'})}
                                 </span>
                             </div>

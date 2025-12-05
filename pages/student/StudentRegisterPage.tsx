@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { registerStudent } from '../../services/api';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const StudentRegisterPage: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -11,28 +11,12 @@ const StudentRegisterPage: React.FC = () => {
       grade: 'ม.3',
       classroom: '3',
       password: '',
-      lineUserId: '',
       profileImageUrl: ''
   });
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-
-  useEffect(() => {
-      const lineId = searchParams.get('lineUserId');
-      const profileImage = searchParams.get('profileImage');
-      
-      if (lineId) {
-          setFormData(prev => ({ 
-              ...prev, 
-              lineUserId: lineId,
-              profileImageUrl: profileImage || prev.profileImageUrl
-          }));
-          setMessage('เชื่อมต่อ LINE ID แล้ว กรุณากรอกข้อมูลส่วนอื่นให้ครบถ้วน');
-      }
-  }, [searchParams]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -92,11 +76,6 @@ const StudentRegisterPage: React.FC = () => {
               <input 
                 name="password" type="password" placeholder="รหัสผ่าน" value={formData.password} onChange={handleChange}
                 className="w-full px-4 py-3 bg-white/70 border border-sky-200 rounded-xl focus:ring-2 focus:ring-sky-400 focus:outline-none" required
-              />
-               <input 
-                name="lineUserId" type="text" placeholder="LINE User ID (ถ้ามี)" value={formData.lineUserId} onChange={handleChange}
-                className="w-full px-4 py-3 bg-white/70 border border-green-200 text-green-700 font-mono rounded-xl focus:ring-2 focus:ring-green-400 focus:outline-none"
-                readOnly={!!formData.lineUserId}
               />
                <input 
                 name="profileImageUrl" type="hidden" value={formData.profileImageUrl}

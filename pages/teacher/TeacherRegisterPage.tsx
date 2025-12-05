@@ -1,27 +1,18 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { registerTeacher } from '../../services/api';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const TeacherRegisterPage: React.FC = () => {
+  const [teacherId, setTeacherId] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [lineUserId, setLineUserId] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-
-  useEffect(() => {
-      const lineId = searchParams.get('lineUserId');
-      if (lineId) {
-          setLineUserId(lineId);
-          setMessage('เชื่อมต่อ LINE ID แล้ว กรุณากรอกข้อมูลส่วนอื่นให้ครบถ้วน');
-      }
-  }, [searchParams]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +30,7 @@ const TeacherRegisterPage: React.FC = () => {
     }
 
     setLoading(true);
-    const result = await registerTeacher(name, email, password, lineUserId);
+    const result = await registerTeacher(teacherId, name, email, password);
     if (result.success) {
       setMessage('ลงทะเบียนสำเร็จ! กำลังนำท่านไปยังหน้าเข้าสู่ระบบ...');
       setTimeout(() => navigate('/teacher/login'), 2000);
@@ -58,6 +49,14 @@ const TeacherRegisterPage: React.FC = () => {
         <div className="bg-white/50 backdrop-blur-lg p-8 rounded-3xl shadow-lg">
           <form onSubmit={handleRegister}>
             <div className="space-y-4">
+               <input 
+                type="text" 
+                placeholder="รหัสครู (Teacher ID)" 
+                value={teacherId}
+                onChange={e => setTeacherId(e.target.value)}
+                className="w-full px-4 py-3 bg-white/70 border border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400 focus:outline-none transition"
+                required
+              />
               <input 
                 type="text" 
                 placeholder="ชื่อ-นามสกุล" 
@@ -89,14 +88,6 @@ const TeacherRegisterPage: React.FC = () => {
                 onChange={e => setConfirmPassword(e.target.value)}
                 className="w-full px-4 py-3 bg-white/70 border border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400 focus:outline-none transition"
                 required
-              />
-               <input 
-                type="text" 
-                placeholder="LINE User ID (ถ้ามี)" 
-                value={lineUserId}
-                onChange={e => setLineUserId(e.target.value)}
-                className="w-full px-4 py-3 bg-white/70 border border-green-200 text-green-700 font-mono rounded-xl focus:ring-2 focus:ring-green-400 focus:outline-none"
-                readOnly={!!lineUserId}
               />
             </div>
             

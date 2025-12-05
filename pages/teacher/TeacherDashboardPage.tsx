@@ -9,17 +9,11 @@ import {
     uploadFile,
     getProfiles,
     updateProfile,
-    getSystemSettings,
-    saveSystemSettings,
-    testLineNotification,
-    generateTaskFlexMessage,
     checkDatabaseHealth,
-    sendLineNotification,
-    bulkRegisterStudents,
     registerTeacher,
     getTimetable,
-    generateTimetableFlexMessage,
-    deleteUser
+    deleteUser,
+    registerStudent
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor, TimetableEntry } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
@@ -49,19 +43,8 @@ const TeacherDashboardPage: React.FC = () => {
     const [editingUser, setEditingUser] = useState<any | null>(null);
     const [viewingStudentId, setViewingStudentId] = useState<string | null>(null);
     const [userSearch, setUserSearch] = useState('');
-    const csvInputRef = useRef<HTMLInputElement>(null);
-    const [importStatus, setImportStatus] = useState<string>('');
     const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
     const [userToDelete, setUserToDelete] = useState<string | null>(null);
-    
-    // Settings State
-    const [lineToken, setLineToken] = useState('');
-    const [lineSecret, setLineSecret] = useState('');
-    const [lineLoginChannelId, setLineLoginChannelId] = useState('');
-    const [lineRedirectUri, setLineRedirectUri] = useState('');
-    const [testGroupId, setTestGroupId] = useState(''); 
-    const [settingsMessage, setSettingsMessage] = useState('');
-    const [isSendingTest, setIsSendingTest] = useState(false);
     
     // DB Health Check State
     const [dbHealth, setDbHealth] = useState<{name: string, status: string}[]>([]);
@@ -97,7 +80,6 @@ const TeacherDashboardPage: React.FC = () => {
     const [scheduleClassroom, setScheduleClassroom] = useState('3');
     const [scheduleData, setScheduleData] = useState<TimetableEntry[]>([]);
     const [scheduleLoading, setScheduleLoading] = useState(false);
-    const [isConfirmSendScheduleOpen, setIsConfirmSendScheduleOpen] = useState(false);
     
     // Confirm Delete Modal State
     const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
@@ -106,7 +88,6 @@ const TeacherDashboardPage: React.FC = () => {
 
     useEffect(() => {
         loadTasks();
-        loadSettings(); 
     }, []);
 
     useEffect(() => {
@@ -135,63 +116,11 @@ const TeacherDashboardPage: React.FC = () => {
         setScheduleLoading(false);
     };
 
-    const loadSettings = async () => {
-        const settings = await getSystemSettings();
-        if (settings['line_channel_access_token']) setLineToken(settings['line_channel_access_token']);
-        if (settings['line_channel_secret']) setLineSecret(settings['line_channel_secret']);
-        if (settings['line_login_channel_id']) setLineLoginChannelId(settings['line_login_channel_id']);
-        if (settings['test_group_id']) setTestGroupId(settings['test_group_id']);
-        
-        const currentOrigin = window.location.origin + window.location.pathname;
-        const suggestedRedirect = currentOrigin + (currentOrigin.endsWith('/') ? '' : '/') + '#/line-callback';
-        setLineRedirectUri(suggestedRedirect);
-    }
-
     const handleCheckDb = async () => {
         setIsCheckingDb(true);
         const result = await checkDatabaseHealth();
         setDbHealth(result.tables);
         setIsCheckingDb(false);
-    }
-
-    const handleSaveSettings = async () => {
-        const result = await saveSystemSettings({ 
-            'line_channel_access_token': lineToken,
-            'line_channel_secret': lineSecret,
-            'line_login_channel_id': lineLoginChannelId,
-            'test_group_id': testGroupId 
-        });
-        setSettingsMessage(result.message);
-        setTimeout(() => setSettingsMessage(''), 3000);
-    }
-
-    const handleTestLine = async (targetId: string, type: 'User' | 'Group', useDefaultToken = false) => {
-        if (!targetId) {
-            setSettingsMessage(`กรุณาระบุ ${type} ID ก่อนทดสอบ`);
-            return;
-        }
-
-        setIsSendingTest(true);
-        const dummyTask: any = {
-            title: `ทดสอบส่งเข้า ${type === 'Group' ? 'กลุ่ม' : 'ส่วนตัว'}`,
-            subject: 'วิชาวิทยาการคำนวณ',
-            description: `นี่คือตัวอย่างการแสดงผลแบบ Flex Message บน LINE (${useDefaultToken ? 'ใช้ Default Token' : 'ใช้ Configured Token'})`,
-            dueDate: new Date(Date.now() + 86400000).toISOString(),
-            category: TaskCategory.HOMEWORK,
-            priority: 'High',
-            targetGrade: 'ม.3',
-            targetClassroom: '3',
-            createdBy: teacher?.name || 'Admin',
-            createdAt: new Date().toISOString()
-        };
-        
-        const flexMessage = generateTaskFlexMessage(dummyTask);
-        const tokenToUse = useDefaultToken ? "" : lineToken;
-        const result = await testLineNotification(tokenToUse, targetId, flexMessage);
-        
-        setSettingsMessage(result.message);
-        setIsSendingTest(false);
-        setTimeout(() => setSettingsMessage(''), 5000);
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -278,18 +207,6 @@ const TeacherDashboardPage: React.FC = () => {
 
                 if (result.success) {
                     setMessage('บันทึกข้อมูลสำเร็จ');
-                    if (testGroupId) {
-                        const fullTask: Task = {
-                            id: result.data?.id || 'temp',
-                            ...taskPayload,
-                            createdAt: new Date().toISOString(),
-                            createdBy: teacher.name,
-                            isCompleted: false
-                        };
-                        sendLineNotification(testGroupId, fullTask)
-                            .then(() => setMessage('บันทึกข้อมูลและส่งแจ้งเตือนไปยังกลุ่ม LINE แล้ว ✅'))
-                            .catch(err => console.error("Auto LINE notification failed:", err));
-                    }
                     handleCancelEdit();
                     loadTasks();
                 } else {
@@ -335,19 +252,38 @@ const TeacherDashboardPage: React.FC = () => {
         const name = formData.get('name') as string;
         const email = formData.get('email') as string;
         const password = formData.get('password') as string;
-        const lineUserId = formData.get('lineUserId') as string;
         
         setIsSubmitting(true);
         let result;
         
         if (userType === 'teacher') {
-             result = await registerTeacher(name, email, password, lineUserId);
+             const teacherId = formData.get('teacher_id') as string;
+             result = await registerTeacher(teacherId, name, email, password);
         } else {
              const studentId = formData.get('student_id') as string;
              const grade = formData.get('grade') as string;
              const classroom = formData.get('classroom') as string;
-             result = await updateProfile('new', { // Reuse register endpoint
-                 student_id: studentId, student_name: name, email, password, grade, classroom, lineUserId
+             const fileInput = formData.get('profileImage') as File;
+             let profileImageUrl = '';
+             
+             if (fileInput && fileInput.size > 0) {
+                 try {
+                     profileImageUrl = await new Promise((resolve) => {
+                         const reader = new FileReader();
+                         reader.onloadend = () => resolve(reader.result as string);
+                         reader.readAsDataURL(fileInput);
+                     });
+                 } catch (e) { console.error(e); }
+             }
+
+             result = await registerStudent({
+                 student_id: studentId, 
+                 student_name: name, 
+                 email, 
+                 password, 
+                 grade, 
+                 classroom,
+                 profile_image: profileImageUrl // Key matches backend column
              });
         }
         
@@ -376,89 +312,6 @@ const TeacherDashboardPage: React.FC = () => {
         setIsConfirmDeleteUserOpen(false);
     };
     
-    const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        setImportStatus('กำลังอ่านไฟล์...');
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            const text = event.target?.result as string;
-            const lines = text.split('\n');
-            const studentsToImport: any[] = [];
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
-                const cols = line.split(',').map(c => c.trim());
-                if (i === 0 && cols[0].toLowerCase().includes('student_id')) continue;
-                if (cols.length >= 6) {
-                    studentsToImport.push({
-                        student_id: cols[0],
-                        student_name: cols[1],
-                        email: cols[2],
-                        grade: cols[3],
-                        classroom: cols[4],
-                        password: cols[5]
-                    });
-                }
-            }
-            if (studentsToImport.length === 0) {
-                setImportStatus('ไม่พบข้อมูลที่ถูกต้องในไฟล์ CSV');
-                return;
-            }
-            setImportStatus(`กำลังนำเข้าข้อมูล ${studentsToImport.length} รายการ...`);
-            const result = await bulkRegisterStudents(studentsToImport);
-            if (result.success) {
-                setImportStatus(`✅ นำเข้าสำเร็จ ${result.count} รายการ`);
-                loadUsers();
-            } else {
-                setImportStatus(`❌ เกิดข้อผิดพลาด: ${result.errors.join(', ')}`);
-            }
-            if (csvInputRef.current) csvInputRef.current.value = '';
-        };
-        reader.readAsText(file);
-    };
-
-    const handleExportUsers = () => {
-        const filteredToExport = filteredUsers;
-        if (filteredToExport.length === 0) {
-            alert('ไม่มีข้อมูลให้ส่งออก');
-            return;
-        }
-        const headers = ['ID', 'Name', 'Email', 'Grade', 'Classroom', 'Role'];
-        const csvContent = [
-            headers.join(','),
-            ...filteredToExport.map(u => [
-                u.student_id || u.teacher_id || u.id,
-                `"${u.student_name || u.full_name || u.name || ''}"`,
-                u.email || '',
-                u.grade || '',
-                u.classroom || '',
-                userType
-            ].join(','))
-        ].join('\n');
-
-        const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `${userType}_list.csv`;
-        link.click();
-    };
-
-    const confirmSendSchedule = async () => {
-        setIsConfirmSendScheduleOpen(false);
-        if (!testGroupId) {
-            alert('กรุณาตั้งค่า Group ID ในเมนูตั้งค่าก่อน');
-            return;
-        }
-        const scheduleFlexMessage = generateTimetableFlexMessage(scheduleGrade, scheduleClassroom, scheduleData);
-        setIsSendingTest(true);
-        const result = await testLineNotification(lineToken, testGroupId, scheduleFlexMessage);
-        setIsSendingTest(false);
-        if(result.success) alert(`ส่งตารางเรียนเรียบร้อยแล้ว`);
-        else alert('เกิดข้อผิดพลาด: ' + result.message);
-    };
-
     // ... Event handlers
     const handleDateClick = (date: Date, dayTasks: Task[]) => {
         setSelectedDate(date);
@@ -493,8 +346,16 @@ const TeacherDashboardPage: React.FC = () => {
         (u.student_id && u.student_id.toLowerCase().includes(userSearch.toLowerCase()))
     );
 
-    // Stats for Main Menu
-    const categoryStats = Object.values(TaskCategory).map(cat => ({
+    // Stats for Main Menu (Specific Order requested by User)
+    const specificCategories = [
+        TaskCategory.CLASS_SCHEDULE,
+        TaskCategory.EXAM_SCHEDULE,
+        TaskCategory.HOMEWORK,
+        TaskCategory.ACTIVITY_INSIDE,
+        TaskCategory.ACTIVITY_OUTSIDE
+    ];
+    
+    const categoryStats = specificCategories.map(cat => ({
         category: cat,
         label: TaskCategoryLabel[cat],
         count: tasks.filter(t => t.category === cat).length,
@@ -531,16 +392,6 @@ const TeacherDashboardPage: React.FC = () => {
                             scheduleData={scheduleData}
                             loading={scheduleLoading}
                          />
-                        <div className="flex justify-end">
-                            <button 
-                                onClick={() => setIsConfirmSendScheduleOpen(true)}
-                                disabled={isSendingTest || scheduleLoading}
-                                className="bg-green-600 text-white font-bold py-2 px-4 rounded-xl shadow-md hover:bg-green-700 transition flex items-center gap-2 text-sm disabled:opacity-50"
-                            >
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-                                {isSendingTest ? 'กำลังส่ง...' : 'ส่งตารางเรียนเข้าไลน์'}
-                            </button>
-                        </div>
                     </div>
                 )}
                 
@@ -639,25 +490,7 @@ const TeacherDashboardPage: React.FC = () => {
                                     เพิ่ม{userType === 'student' ? 'นักเรียน' : 'ครู'}ใหม่
                                 </button>
                             </div>
-                            {userType === 'student' && (
-                                <div className="flex gap-2">
-                                    <div className="relative overflow-hidden">
-                                        <button className="bg-emerald-50 text-emerald-700 font-bold py-2 px-4 rounded-xl border border-emerald-100 hover:bg-emerald-100 transition flex items-center gap-2 text-sm">
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                            นำเข้า CSV
-                                        </button>
-                                        <input type="file" accept=".csv" onChange={handleCsvUpload} ref={csvInputRef} className="absolute inset-0 opacity-0 cursor-pointer" />
-                                    </div>
-                                    <button 
-                                        onClick={handleExportUsers} 
-                                        className="bg-slate-50 text-slate-600 font-bold py-2 px-4 rounded-xl border border-slate-200 hover:bg-slate-100 transition flex items-center gap-2 text-sm"
-                                    >
-                                        Export
-                                    </button>
-                                </div>
-                            )}
                         </div>
-                        {importStatus && <p className="text-sm font-medium text-center bg-slate-100 p-2 rounded-lg">{importStatus}</p>}
                         
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                             <table className="w-full text-sm text-left">
@@ -687,67 +520,6 @@ const TeacherDashboardPage: React.FC = () => {
                 
                 {activeTab === 'settings' && (
                      <div className="space-y-4 animate-fade-in pb-12">
-                        <Card>
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="p-3 bg-green-100 text-green-600 rounded-full">
-                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M22 10.5C22 5.25 17.07 1 11 1S0 5.25 0 10.5c0 4.69 3.75 8.59 9 9.35.35.83.25.96.11.27.07.69.04.99-.08 1.1-.96 3.93-1.07 4.31-.17.61-.09.84.34.84.45 0 1.2-.23 4.96-3.38 3.58.98 7.77-.52 7.77-5.67z"/></svg>
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-bold text-slate-800">ตั้งค่า LINE Messaging & Login</h2>
-                                    <p className="text-sm text-slate-500">จัดการการเชื่อมต่อ LINE OA และ LINE Login</p>
-                                </div>
-                            </div>
-                            
-                            <div className="space-y-6">
-                                <div className="bg-green-50/50 p-4 rounded-xl border border-green-100">
-                                    <h3 className="font-bold text-green-800 mb-3 text-sm">LINE Messaging API (สำหรับส่งแจ้งเตือน)</h3>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-600 mb-1">Channel Access Token</label>
-                                            <textarea rows={2} value={lineToken} onChange={(e) => setLineToken(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg bg-white font-mono text-xs" placeholder="วาง Long-lived access token..." />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-600 mb-1">Channel Secret</label>
-                                            <input type="password" value={lineSecret} onChange={(e) => setLineSecret(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg bg-white font-mono text-xs" placeholder="วาง Channel Secret..." />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-600 mb-1">Group ID (สำหรับการแจ้งเตือนอัตโนมัติ)</label>
-                                            <div className="flex gap-2">
-                                                <input type="text" value={testGroupId} onChange={(e) => setTestGroupId(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg bg-white font-mono text-xs" placeholder="Cxxxxxxxx..." />
-                                                <button onClick={() => handleTestLine(testGroupId, 'Group')} disabled={isSendingTest} className="px-3 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs hover:bg-blue-100 border border-blue-200 whitespace-nowrap">ทดสอบ</button>
-                                            </div>
-                                            <div className="mt-2">
-                                                <button onClick={() => handleTestLine(testGroupId, 'Group', true)} disabled={isSendingTest} className="w-full py-2 bg-slate-600 text-white rounded-lg font-bold text-xs hover:bg-slate-700 transition shadow-sm">
-                                                    📢 ทดสอบส่งเข้ากลุ่ม (Default Token)
-                                                </button>
-                                                <p className="text-[10px] text-slate-400 mt-1 text-center">ใช้ Token ที่ฝังมากับระบบหากไม่ได้ตั้งค่าในฟอร์ม</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
-                                    <h3 className="font-bold text-indigo-800 mb-3 text-sm">LINE Login (สำหรับเข้าสู่ระบบ)</h3>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-600 mb-1">Login Channel ID</label>
-                                            <input type="text" value={lineLoginChannelId} onChange={(e) => setLineLoginChannelId(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg bg-white font-mono text-xs" placeholder="165xxxxxxx" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-600 mb-1">Redirect URI (ต้องตรงกับใน LINE Developer Console)</label>
-                                            <div className="flex gap-2">
-                                                <input type="text" value={lineRedirectUri} readOnly className="w-full p-2 border border-slate-200 rounded-lg bg-slate-100 text-slate-500 font-mono text-xs" />
-                                                <button onClick={() => navigator.clipboard.writeText(lineRedirectUri)} className="px-3 bg-white border border-slate-200 rounded-lg text-slate-500 text-xs hover:bg-slate-50">Copy</button>
-                                            </div>
-                                            <p className="text-[10px] text-slate-400 mt-1">นำ URL นี้ไปใส่ใน LINE Developers &gt; LINE Login &gt; Callback URL</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <button onClick={handleSaveSettings} className="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-green-600 transition">บันทึกการตั้งค่า</button>
-                                {settingsMessage && <p className={`text-center text-sm font-medium animate-fade-in p-2 rounded ${settingsMessage.includes('ล้มเหลว') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>{settingsMessage}</p>}
-                            </div>
-                        </Card>
                         <Card>
                              <div className="flex items-center gap-3 mb-4">
                                 <div className="p-3 bg-indigo-100 text-indigo-600 rounded-full">
@@ -784,7 +556,6 @@ const TeacherDashboardPage: React.FC = () => {
             </div>
 
             {/* Modals ... */}
-            <ConfirmModal isOpen={isConfirmSendScheduleOpen} title="ยืนยันการส่งตารางเรียน" message={`คุณต้องการส่งตารางเรียนของชั้น ${scheduleGrade}/${scheduleClassroom} ไปยังกลุ่มไลน์ใช่หรือไม่?`} onConfirm={confirmSendSchedule} onCancel={() => setIsConfirmSendScheduleOpen(false)} confirmText="ส่งตารางเรียน" variant="success" />
             <ConfirmModal isOpen={isConfirmDeleteOpen} title="ยืนยันการลบ" message="คุณแน่ใจหรือไม่ว่าต้องการลบภาระงานนี้?" onConfirm={confirmDeleteTask} onCancel={() => setIsConfirmDeleteOpen(false)} confirmText="ลบข้อมูล" variant="danger" />
             <ConfirmModal isOpen={isConfirmDeleteUserOpen} title="ยืนยันการลบผู้ใช้" message="คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้งานรายนี้? การกระทำนี้ไม่สามารถเรียกคืนได้" onConfirm={confirmDeleteUser} onCancel={() => setIsConfirmDeleteUserOpen(false)} confirmText="ลบผู้ใช้งาน" variant="danger" />
             
@@ -822,15 +593,19 @@ const TeacherDashboardPage: React.FC = () => {
                                          <div><label className="block text-xs font-bold text-slate-500 mb-1">ชั้น</label><input name="grade" defaultValue="ม.3" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
                                          <div><label className="block text-xs font-bold text-slate-500 mb-1">ห้อง</label><input name="classroom" defaultValue="3" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
                                      </div>
+                                     <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">รูปโปรไฟล์</label>
+                                        <input type="file" name="profileImage" accept="image/*" className="w-full p-2 border border-slate-200 rounded-xl text-xs" />
+                                     </div>
                                  </>
                              ) : (
                                  <>
+                                    <div><label className="block text-xs font-bold text-slate-500 mb-1">รหัสครู (Teacher ID)</label><input name="teacher_id" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
                                     <div><label className="block text-xs font-bold text-slate-500 mb-1">ชื่อ-นามสกุล</label><input name="name" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
                                     <div><label className="block text-xs font-bold text-slate-500 mb-1">อีเมล</label><input name="email" type="email" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
                                  </>
                              )}
                              <div><label className="block text-xs font-bold text-slate-500 mb-1">รหัสผ่าน</label><input name="password" type="password" className="w-full p-2.5 border border-slate-200 rounded-xl" required /></div>
-                             <input type="hidden" name="lineUserId" />
                              <button type="submit" disabled={isSubmitting} className="w-full mt-4 bg-purple-600 text-white font-bold py-3 rounded-xl hover:bg-purple-700 transition">{isSubmitting ? 'กำลังบันทึก...' : 'บันทึก'}</button>
                          </form>
                     </div>

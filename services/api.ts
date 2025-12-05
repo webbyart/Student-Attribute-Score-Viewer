@@ -1,14 +1,12 @@
-import { StudentData, Student, Task, Teacher, TaskCategory, Notification, TimetableEntry, SystemSettings, PortfolioItem, TaskCategoryLabel } from '../types';
+
+import { StudentData, Student, Task, Teacher, TaskCategory, Notification, TimetableEntry, SystemSettings, PortfolioItem, TaskCategoryLabel, LineLoginResult } from '../types';
 
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-// ⚠️⚠️ IMPORTANT: Replace this URL with your NEW deployment URL (v26.0) ⚠️⚠️
+// ⚠️⚠️ IMPORTANT: Replace this URL with your NEW deployment URL ⚠️⚠️
 export const API_URL = 'https://script.google.com/macros/s/AKfycbxkYqhh3xsd-pV9ERZjrRLPzzaNbPpdCazl2NrqfQZnz7IrNmbru8E7u2F8eKzlt4yJ/exec'; 
 
-const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
-const DEFAULT_LIFF_ID = '2008618173'; 
-const APP_URL = 'https://student-homework.netlify.app/';
 
 // --- API Helpers ---
 
@@ -56,20 +54,20 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
 
             const text = await response.text();
             
-            if (text.startsWith('[Ljava') || text.includes('Unexpected token') || text.includes('Ljava.lang')) {
-                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v26.0) of the Script.");
-                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v26.0)." };
+            // RELAXED CHECK: Only block if the entire response starts with Java Object signature
+            if (text.startsWith('[Ljava')) {
+                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON.");
+                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script error." };
             }
 
             try {
                 const data = JSON.parse(text);
                 if (data.error) throw new Error(data.error);
-                if (data._backendVersion !== '26.0') console.warn(`WARNING: Backend version mismatch. Expected v26.0, got ${data._backendVersion || 'Unknown'}. Please Re-Deploy.`);
                 return Array.isArray(data) ? data.map(normalizeKeys) : normalizeKeys(data);
             } catch (e: any) {
                 console.error("JSON Parse Error:", e.message, "Response:", text.substring(0, 100));
                 if (action.startsWith('get')) return [];
-                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v26.0).");
+                throw new Error("Invalid JSON response from server.");
             }
         } catch (error: any) {
             attempts++;
@@ -82,7 +80,22 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
     }
 };
 
-// ... (Existing exports remain the same) ...
+// --- Helper to map Task to Snake Case for Google Sheet Headers ---
+const mapTaskToPayload = (task: Partial<Task>) => {
+    const payload: any = { ...task };
+    // Google Sheets headers are snake_case (defined in backend/Code.js setupSheet)
+    if (task.dueDate) payload.due_date = task.dueDate;
+    if (task.targetGrade) payload.target_grade = task.targetGrade;
+    if (task.targetClassroom) payload.target_classroom = task.targetClassroom;
+    if (task.targetStudentId) payload.target_student_id = task.targetStudentId;
+    if (task.createdBy) payload.created_by = task.createdBy;
+    if (task.isCompleted !== undefined) payload.is_completed = task.isCompleted;
+    if (task.createdAt) payload.created_at = task.createdAt;
+    
+    return payload;
+};
+
+// ... Exports ...
 
 export const loginStudent = async (studentId: string, email: string, password?: string): Promise<Student | null> => {
     try {
@@ -137,9 +150,20 @@ export const loginTeacher = async (email: string, password: string): Promise<Tea
     return null;
 };
 
+export const loginWithLineCode = async (code: string, redirectUri: string): Promise<LineLoginResult> => {
+    try {
+        const result = await apiRequest('loginWithLine', 'POST', { code, redirectUri });
+        return result as LineLoginResult;
+    } catch (e: any) {
+        return { success: false, message: e.message };
+    }
+};
+
 export const registerStudent = async (data: any) => apiRequest('registerStudent', 'POST', data);
-export const registerTeacher = async (name: string, email: string, password: string, lineUserId?: string) => 
-    apiRequest('registerTeacher', 'POST', { name, email, password, lineUserId });
+
+// Updated to support teacher ID
+export const registerTeacher = async (teacherId: string, name: string, email: string, password: string) => 
+    apiRequest('registerTeacher', 'POST', { teacher_id: teacherId, name, email, password });
 
 export const deleteUser = async (role: 'student' | 'teacher', id: string) => {
     const endpoint = role === 'student' ? 'deleteStudent' : 'deleteTeacher';
@@ -151,22 +175,39 @@ export const getAllTasks = async (): Promise<Task[]> => {
         const rawTasks = await apiRequest('getTasks', 'GET');
         if (!rawTasks || !Array.isArray(rawTasks)) return [];
 
-        return rawTasks.map((t: any) => ({
-            id: t.id ? t.id.toString() : Math.random().toString(),
-            title: t.title,
-            subject: t.subject,
-            description: t.description,
-            dueDate: t.due_date,
-            category: t.category,
-            priority: t.priority,
-            targetGrade: t.target_grade,
-            targetClassroom: t.target_classroom,
-            targetStudentId: t.target_student_id,
-            createdBy: t.created_by || 'Admin',
-            createdAt: t.created_at || new Date().toISOString(),
-            attachments: t.attachments ? (typeof t.attachments === 'string' && t.attachments.startsWith('[') ? JSON.parse(t.attachments) : []) : [],
-            isCompleted: t.is_completed === 'TRUE' || t.is_completed === true || t.is_completed === 'true'
-        }));
+        return rawTasks.map((t: any) => {
+            // Safe Attachment Parsing
+            let safeAttachments = [];
+            // If backend already sanitized to "[]", JSON.parse works.
+            // If it's a string from legacy, check:
+            if (t.attachments && typeof t.attachments === 'string') {
+                 try { 
+                     // Handle "Ljava" cases handled by backend sanitizer now returning "[]"
+                     safeAttachments = JSON.parse(t.attachments); 
+                 } catch(e) {
+                     // Fallback
+                     safeAttachments = [];
+                 }
+            }
+
+            return {
+                id: t.id ? t.id.toString() : Math.random().toString(),
+                title: t.title,
+                subject: t.subject,
+                description: t.description,
+                // Ensure date mapping is correct from Sheet (snake_case from backend)
+                dueDate: t.due_date, 
+                category: t.category,
+                priority: t.priority,
+                targetGrade: t.target_grade,
+                targetClassroom: t.target_classroom,
+                targetStudentId: t.target_student_id,
+                createdBy: t.created_by || 'Admin',
+                createdAt: t.created_at || new Date().toISOString(),
+                attachments: safeAttachments,
+                isCompleted: t.is_completed === 'TRUE' || t.is_completed === true || t.is_completed === 'true'
+            };
+        });
     } catch (e) {
         console.error("Error fetching tasks:", e);
         return [];
@@ -180,8 +221,8 @@ export const getStudentCompletions = async (studentId: string) => {
     } catch (e) { return []; }
 }
 
-export const createTask = async (task: Partial<Task>) => apiRequest('createTask', 'POST', task);
-export const updateTask = async (task: Partial<Task>) => apiRequest('updateTask', 'POST', { id: task.id, payload: task });
+export const createTask = async (task: Partial<Task>) => apiRequest('createTask', 'POST', mapTaskToPayload(task));
+export const updateTask = async (task: Partial<Task>) => apiRequest('updateTask', 'POST', { id: task.id, payload: mapTaskToPayload(task) });
 export const deleteTask = async (taskId: string) => apiRequest('deleteTask', 'POST', { id: taskId });
 export const toggleTaskStatus = async (studentId: string, taskId: string, isCompleted: boolean) => 
     apiRequest('toggleTaskStatus', 'POST', { studentId, taskId, isCompleted });
@@ -284,112 +325,16 @@ export const getSystemSettings = async (): Promise<Record<string, string>> => {
     try {
         const settings = await apiRequest('getSystemSettings', 'GET');
         const final = { ...settings };
-        if (!final['line_channel_access_token']) final['line_channel_access_token'] = DEFAULT_LINE_TOKEN;
         if (!final['test_group_id']) final['test_group_id'] = DEFAULT_GROUP_ID;
-        if (!final['line_login_channel_id']) final['line_login_channel_id'] = DEFAULT_LIFF_ID;
         return final;
     } catch (e) {
-        return { 'line_channel_access_token': DEFAULT_LINE_TOKEN, 'test_group_id': DEFAULT_GROUP_ID, 'line_login_channel_id': DEFAULT_LIFF_ID };
+        return { 'test_group_id': DEFAULT_GROUP_ID };
     }
 }
 export const saveSystemSettings = async (settings: Record<string, string>) => apiRequest('saveSystemSettings', 'POST', settings);
 
-const getFlexColor = (category: TaskCategory) => {
-    switch (category) {
-        case TaskCategory.EXAM_SCHEDULE: return "#EF4444";
-        case TaskCategory.HOMEWORK: return "#F97316";
-        case TaskCategory.CLASS_SCHEDULE: return "#3B82F6";
-        case TaskCategory.ACTIVITY_INSIDE: return "#10B981";
-        case TaskCategory.ACTIVITY_OUTSIDE: return "#8B5CF6";
-        default: return "#64748B";
-    }
-};
-
-export const generateTimetableFlexMessage = (grade: string, classroom: string, timetable: TimetableEntry[]) => ({
-    type: "flex", altText: `ตารางเรียน ${grade}/${classroom}`,
-    contents: { type: "bubble", body: { type: "box", layout: "vertical", contents: [ { type: "text", text: `ตารางเรียน ${grade}/${classroom}`, weight: "bold", size: "xl" } ] } }
-});
-
-export const generateTaskFlexMessage = (task: Task) => {
-    const color = getFlexColor(task.category);
-    const dateStr = new Date(task.dueDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
-    const timeStr = new Date(task.dueDate).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-    const createDateStr = task.createdAt ? new Date(task.createdAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit' }) : '-';
-
-    return {
-        type: "flex",
-        altText: `งานใหม่: ${task.title}`,
-        contents: {
-            type: "bubble",
-            size: "mega",
-            header: {
-                type: "box",
-                layout: "vertical",
-                contents: [ { type: "text", text: TaskCategoryLabel[task.category] || "แจ้งเตือน", color: "#ffffff", weight: "bold", size: "sm" } ],
-                backgroundColor: color,
-                paddingAll: "15px"
-            },
-            body: {
-                type: "box",
-                layout: "vertical",
-                contents: [
-                    { type: "text", text: task.title, weight: "bold", size: "xl", wrap: true, color: "#1f2937" },
-                    { type: "text", text: task.subject, size: "sm", color: "#6b7280", margin: "xs", weight: "bold" },
-                    { type: "separator", margin: "md", color: "#e5e7eb" },
-                    {
-                        type: "box",
-                        layout: "vertical",
-                        margin: "md",
-                        spacing: "sm",
-                        contents: [
-                            { type: "box", layout: "baseline", contents: [ { type: "text", text: "📅 กำหนด:", size: "xs", color: "#9ca3af", flex: 3 }, { type: "text", text: `${dateStr} ${timeStr} น.`, size: "xs", color: "#ef4444", flex: 7, weight: "bold" } ] },
-                            { type: "box", layout: "baseline", contents: [ { type: "text", text: "👥 สำหรับ:", size: "xs", color: "#9ca3af", flex: 3 }, { type: "text", text: `ชั้น ${task.targetGrade}/${task.targetClassroom}`, size: "xs", color: "#374151", flex: 7 } ] },
-                            { type: "box", layout: "baseline", contents: [ { type: "text", text: "👤 ผู้แจ้ง:", size: "xs", color: "#9ca3af", flex: 3 }, { type: "text", text: task.createdBy || "-", size: "xs", color: "#374151", flex: 7 } ] }
-                        ]
-                    }
-                ]
-            },
-            footer: {
-                type: "box",
-                layout: "vertical",
-                contents: [ { type: "button", action: { type: "uri", label: "ดูรายละเอียด", uri: APP_URL }, style: "primary", color: color, height: "sm" } ],
-                paddingAll: "15px"
-            }
-        }
-    };
-};
-
 export const sendCompletionNotification = async (studentName: string, taskTitle: string) => {
-    const settings = await getSystemSettings();
-    const groupId = settings['test_group_id'] || DEFAULT_GROUP_ID;
-    const token = settings['line_channel_access_token'] || DEFAULT_LINE_TOKEN;
-    if (!groupId) return;
-    const message = { type: "flex", altText: "ส่งงานแล้ว", contents: { type: "bubble", body: { type: "box", layout: "vertical", contents: [ { type: "text", text: "✅ ส่งงานเรียบร้อย", weight: "bold", color: "#10B981" }, { type: "text", text: `${studentName} ส่งงาน: ${taskTitle}`, wrap: true, margin: "sm" } ] } } };
-    await apiRequest('sendLineMessage', 'POST', { to: groupId, messages: [message], token });
-};
-
-export const sendLineNotification = async (to: string, messageOrTask: string | Task | object) => {
-    let message = typeof messageOrTask === 'object' && 'title' in messageOrTask ? generateTaskFlexMessage(messageOrTask as Task) : (typeof messageOrTask === 'string' ? { type: 'text', text: messageOrTask } : messageOrTask);
-    const settings = await getSystemSettings();
-    const token = settings['line_channel_access_token'] || DEFAULT_LINE_TOKEN;
-    return await apiRequest('sendLineMessage', 'POST', { to, messages: [message], token });
-};
-
-export const testLineNotification = async (token: string, userId: string, message: object) => {
-    const res = await apiRequest('sendLineMessage', 'POST', { to: userId, messages: [message], token });
-    return { success: res.success, message: res.success ? 'ส่งข้อความสำเร็จ' : (res.message || 'ส่งไม่สำเร็จ') };
-}
-
-export const getLineLoginUrl = (channelId: string, redirectUri: string, state: string) => 
-    `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${channelId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=profile openid email`;
-
-export const loginWithLineCode = async (code: string, redirectUri: string) => {
-    try {
-        return await apiRequest('lineLogin', 'POST', { code, redirectUri });
-    } catch (e: any) {
-        console.error("LINE Login API Fail:", e);
-        throw new Error("Cannot connect to Login Server: " + e.message);
-    }
+    return { success: true };
 };
 
 export const syncLineUserProfile = async () => {};
