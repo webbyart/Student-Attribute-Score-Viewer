@@ -4,7 +4,7 @@ import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Timeta
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
 // ⚠️⚠️ IMPORTANT: Replace this URL with your NEW deployment URL ⚠️⚠️
-export const API_URL = 'https://script.google.com/macros/s/AKfycbzp2yXkzjOamHrMYlIej_Z9iUaxUGOGeJjr3DGetTiJ43pQNXr_7uzv8p66doASl7f6/exec'; 
+export const API_URL = 'https://script.google.com/macros/s/AKfycbyVe80VSSEgx3Cm1Y81fKZ0CfLPHnJZlZUIANjiavIevMQQc5bSuDPex61Am08HAxo/exec'; 
 
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
 
@@ -60,20 +60,31 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
                  return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script error." };
             }
 
+            let data;
             try {
-                const data = JSON.parse(text);
-                if (data.error) throw new Error(data.error);
-                return Array.isArray(data) ? data.map(normalizeKeys) : normalizeKeys(data);
+                data = JSON.parse(text);
             } catch (e: any) {
-                console.error("JSON Parse Error:", e.message, "Response:", text.substring(0, 100));
+                console.error("JSON Parse Error. Response was:", text.substring(0, 100));
                 if (action.startsWith('get')) return [];
                 throw new Error("Invalid JSON response from server.");
             }
-        } catch (error: any) {
-            attempts++;
-            if (error.message.includes("JSON") || error.message.includes("Backend")) throw error; 
 
+            if (data.error) {
+                // If backend returns a logic error, throw it immediately (don't retry)
+                throw new Error(data.error); 
+            }
+
+            return Array.isArray(data) ? data.map(normalizeKeys) : normalizeKeys(data);
+
+        } catch (error: any) {
+            // Stop retrying if it's a backend logic error (e.g. Unknown Action) or JSON error
+            if (!error.message.includes("HTTP error") && !error.message.includes("Failed to fetch")) {
+                throw error;
+            }
+
+            attempts++;
             console.warn(`API Connection Failed [${action}] (Attempt ${attempts}/${maxAttempts}):`, error);
+            
             if (attempts >= maxAttempts) throw error;
             await delay(1000 * attempts);
         }
@@ -342,5 +353,13 @@ export const loginWithLineCode = async (code: string, redirectUri: string): Prom
         return result;
     } catch (e: any) {
         return { success: false, message: e.message || 'Login failed' };
+    }
+};
+
+export const testLineMessage = async () => {
+    try {
+        return await apiRequest('testLineMessage', 'POST');
+    } catch (e: any) {
+        return { success: false, message: e.message };
     }
 };

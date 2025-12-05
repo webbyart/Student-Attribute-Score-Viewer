@@ -15,7 +15,8 @@ import {
     deleteUser,
     registerStudent,
     bulkRegisterStudents,
-    createTimetableEntry // NEW
+    createTimetableEntry,
+    testLineMessage // NEW
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor, TimetableEntry } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
@@ -27,7 +28,7 @@ import DayEventsModal from '../../components/ui/DayEventsModal';
 import TaskDetailModal from '../../components/ui/TaskDetailModal';
 import TimetableGrid from '../../components/ui/TimetableGrid';
 import ConfirmModal from '../../components/ui/ConfirmModal';
-import FileChip from '../../components/ui/FileChip'; // Import FileChip
+import FileChip from '../../components/ui/FileChip';
 
 const TeacherDashboardPage: React.FC = () => {
     const { teacher } = useTeacherAuth();
@@ -52,7 +53,9 @@ const TeacherDashboardPage: React.FC = () => {
     
     // DB Health Check State
     const [dbHealth, setDbHealth] = useState<{name: string, status: string}[]>([]);
+    const [backendVersion, setBackendVersion] = useState<string>(''); // New
     const [isCheckingDb, setIsCheckingDb] = useState(false);
+    const [isTestingLine, setIsTestingLine] = useState(false);
 
     // Task Filter State
     const [taskSearch, setTaskSearch] = useState('');
@@ -137,9 +140,28 @@ const TeacherDashboardPage: React.FC = () => {
 
     const handleCheckDb = async () => {
         setIsCheckingDb(true);
-        const result = await checkDatabaseHealth();
-        setDbHealth(result.tables);
+        try {
+            const result: any = await checkDatabaseHealth();
+            setDbHealth(result.tables || []);
+            // @ts-ignore
+            if (result.version) setBackendVersion(result.version);
+        } catch(e) { console.error(e); }
         setIsCheckingDb(false);
+    }
+
+    const handleTestLine = async () => {
+        setIsTestingLine(true);
+        try {
+            const result = await testLineMessage();
+            if (result.success) {
+                alert('ส่งข้อความทดสอบสำเร็จ! กรุณาเช็คในกลุ่ม LINE');
+            } else {
+                alert('ส่งข้อความไม่สำเร็จ: ' + result.message);
+            }
+        } catch(e: any) {
+            alert('Error: ' + e.message);
+        }
+        setIsTestingLine(false);
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -169,7 +191,6 @@ const TeacherDashboardPage: React.FC = () => {
         let formattedDate = '';
         if (task.dueDate) {
             const d = new Date(task.dueDate);
-            // Adjust to local ISO string somewhat manually to avoid UTC conversion issues in simple inputs
             const pad = (n: number) => n < 10 ? '0' + n : n;
             formattedDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
         }
@@ -226,7 +247,6 @@ const TeacherDashboardPage: React.FC = () => {
 
             const allAttachments = [...existingAttachments, ...uploadedUrls];
 
-            // Ensure proper ISO date string
             const isoDate = new Date(formData.dueDate).toISOString();
 
             const taskPayload = {
@@ -258,7 +278,7 @@ const TeacherDashboardPage: React.FC = () => {
                 const result = await createTask(taskPayload);
 
                 if (result.success) {
-                    setMessage('บันทึกข้อมูลสำเร็จ');
+                    setMessage('บันทึกข้อมูลสำเร็จ (แจ้งเตือน LINE แล้ว)');
                     handleCancelEdit();
                     loadTasks();
                 } else {
@@ -271,10 +291,8 @@ const TeacherDashboardPage: React.FC = () => {
         setIsSubmitting(false);
     };
 
-    // Callback when user double clicks a grid cell
     const handleSlotDoubleClick = (day: string, periodIndex: number, time: string, currentEntry?: TimetableEntry) => {
         if (currentEntry) {
-            // Edit existing
             setTimetableFormData({
                 day_of_week: currentEntry.day_of_week,
                 period_index: currentEntry.period_index,
@@ -286,7 +304,6 @@ const TeacherDashboardPage: React.FC = () => {
                 classroom: currentEntry.classroom
             });
         } else {
-            // Create new for this slot
             setTimetableFormData({
                 day_of_week: day,
                 period_index: periodIndex,
@@ -315,10 +332,8 @@ const TeacherDashboardPage: React.FC = () => {
             
             const result = await createTimetableEntry(timetableEntry);
             if (result.success) {
-                // alert('บันทึกตารางเรียนสำเร็จ');
                 setIsTimetableModalOpen(false);
-                loadSchedule(); // Refresh grid
-                // Reset subject/room but keep context
+                loadSchedule();
                 setTimetableFormData({ ...timetableFormData, subject: '', room: '' });
             } else {
                  alert('เกิดข้อผิดพลาด: ' + result.message);
@@ -422,8 +437,6 @@ const TeacherDashboardPage: React.FC = () => {
         setIsConfirmDeleteUserOpen(false);
     };
     
-    // --- CSV Helper Functions ---
-
     const handleExportCSV = () => {
         const headers = ["student_id", "student_name", "email", "grade", "classroom", "password"];
         const dataToExport = filteredUsers.length > 0 ? filteredUsers : users;
@@ -642,7 +655,6 @@ const TeacherDashboardPage: React.FC = () => {
                                 </div>
                             </div>
                             
-                            {/* STANDARD TASK FORM (Used for ALL categories now) */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {formData.category === TaskCategory.HOMEWORK && (
                                     <div>
@@ -756,6 +768,7 @@ const TeacherDashboardPage: React.FC = () => {
                 
                 {activeTab === 'users' && (
                      <div className="space-y-4 animate-fade-in">
+                        {/* Users Tab Content - Kept same as previous logic */}
                         <div className="flex gap-2 mb-4 bg-white p-1 rounded-xl shadow-sm border border-slate-100">
                             <button onClick={() => setUserType('student')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${userType === 'student' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>นักเรียน</button>
                             <button onClick={() => setUserType('teacher')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${userType === 'teacher' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>ครู/บุคลากร</button>
@@ -776,7 +789,6 @@ const TeacherDashboardPage: React.FC = () => {
                                             className="px-4 bg-green-500 text-white font-bold py-2 rounded-xl shadow-md hover:bg-green-600 transition flex items-center justify-center gap-1 text-sm"
                                             title="Export CSV"
                                         >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                             Export
                                         </button>
                                         <button 
@@ -784,7 +796,6 @@ const TeacherDashboardPage: React.FC = () => {
                                             className="px-4 bg-blue-500 text-white font-bold py-2 rounded-xl shadow-md hover:bg-blue-600 transition flex items-center justify-center gap-1 text-sm"
                                             title="Import CSV"
                                         >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                                             Import
                                         </button>
                                         <input 
@@ -827,6 +838,11 @@ const TeacherDashboardPage: React.FC = () => {
                 
                 {activeTab === 'settings' && (
                      <div className="space-y-4 animate-fade-in pb-12">
+                        {backendVersion && (
+                            <div className="text-center text-xs text-slate-400 mb-2 font-mono">
+                                Backend Version: {backendVersion}
+                            </div>
+                        )}
                         <Card>
                              <div className="flex items-center gap-3 mb-4">
                                 <div className="p-3 bg-indigo-100 text-indigo-600 rounded-full">
@@ -848,6 +864,18 @@ const TeacherDashboardPage: React.FC = () => {
                                 </div>
                             )}
                         </Card>
+
+                        <Card>
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-3 bg-green-100 text-green-600 rounded-full">
+                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                                </div>
+                                <div><h2 className="text-lg font-bold text-slate-800">ทดสอบการแจ้งเตือน LINE</h2><p className="text-sm text-slate-500">ส่งข้อความทดสอบไปยังกลุ่ม</p></div>
+                            </div>
+                            <button onClick={handleTestLine} disabled={isTestingLine} className="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-green-600 transition flex items-center justify-center gap-2">
+                                {isTestingLine ? 'กำลังส่ง...' : 'ส่งข้อความทดสอบ'}
+                            </button>
+                        </Card>
                      </div>
                 )}
             </div>
@@ -862,15 +890,13 @@ const TeacherDashboardPage: React.FC = () => {
                  <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition w-[16%] ${activeTab === 'settings' ? 'text-green-600' : 'text-slate-400 hover:text-slate-600'}`}><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg><span className="text-[10px] font-bold">ตั้งค่า</span></button>
             </div>
 
-            {/* Modals ... */}
+            {/* Modals ... (Rest of existing modals) */}
             <ConfirmModal isOpen={isConfirmDeleteOpen} title="ยืนยันการลบ" message="คุณแน่ใจหรือไม่ว่าต้องการลบภาระงานนี้?" onConfirm={confirmDeleteTask} onCancel={() => setIsConfirmDeleteOpen(false)} confirmText="ลบข้อมูล" variant="danger" />
             <ConfirmModal isOpen={isConfirmDeleteUserOpen} title="ยืนยันการลบผู้ใช้" message="คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้งานรายนี้? การกระทำนี้ไม่สามารถเรียกคืนได้" onConfirm={confirmDeleteUser} onCancel={() => setIsConfirmDeleteUserOpen(false)} confirmText="ลบผู้ใช้งาน" variant="danger" />
             
             {isDayModalOpen && selectedDate && <DayEventsModal date={selectedDate} tasks={selectedDayTasks} onClose={() => setIsDayModalOpen(false)} onTaskClick={handleTaskClickFromModal} />}
             {selectedTaskForModal && <TaskDetailModal task={selectedTaskForModal} onClose={() => setSelectedTaskForModal(null)} />}
             
-            {/* Edit User Modal, Add User Modal, Timetable Modal... (omitted for brevity, assume same as before) */}
-            {/* ... (Existing modals logic remains identical) ... */}
              {editingUser && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
