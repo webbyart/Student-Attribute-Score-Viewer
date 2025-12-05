@@ -1,10 +1,9 @@
-
 import { StudentData, Student, Task, Teacher, TaskCategory, Notification, TimetableEntry, SystemSettings, PortfolioItem, TaskCategoryLabel } from '../types';
 
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
-// IMPORTANT: You MUST Deploy "Version 24.0" of your script and paste the new URL here.
-export const API_URL = 'https://script.google.com/macros/s/AKfycbwupL_oe1BtETe00kwZWeSCSs90DaCwrP8zAGHqqOu0NOiyVSUPqM7aSNFXotha8rtr/exec'; 
+// ⚠️⚠️ IMPORTANT: Replace this URL with your NEW deployment URL (v26.0) ⚠️⚠️
+export const API_URL = 'https://script.google.com/macros/s/AKfycbxkYqhh3xsd-pV9ERZjrRLPzzaNbPpdCazl2NrqfQZnz7IrNmbru8E7u2F8eKzlt4yJ/exec'; 
 
 const DEFAULT_LINE_TOKEN = 'vlDItyJKpyGjw6V7TJvo14KcedwDLc+M3or5zXnx5zu4W6izTtA6W4igJP9sc6CParnR+9hXIZEUkjs6l0QjpN6zdb2fNZ06W29X7Mw7YtXdG2/A04TrcDT6SuZq2oFJLE9Ah66iyWAAKQe2aWpCYQdB04t89/1O/w1cDnyilFU=';
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
@@ -31,7 +30,7 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
         action,
         sheet_id: GOOGLE_SHEET_ID,
         _t: new Date().getTime().toString(),
-        ...payload // Pass simple payload items as query params for GET
+        ...payload 
     });
 
     const url = `${API_URL}?${queryParams.toString()}`;
@@ -58,19 +57,19 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
             const text = await response.text();
             
             if (text.startsWith('[Ljava') || text.includes('Unexpected token') || text.includes('Ljava.lang')) {
-                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v24.0) of the Script.");
-                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v24.0)." };
+                 console.error("CRITICAL ERROR: Backend returned Java Object instead of JSON. You MUST Deploy a New Version (v26.0) of the Script.");
+                 return action.startsWith('get') ? [] : { success: false, message: "CRITICAL: Script not deployed correctly. Please Deploy New Version (v26.0)." };
             }
 
             try {
                 const data = JSON.parse(text);
                 if (data.error) throw new Error(data.error);
-                if (data._backendVersion !== '24.0') console.warn("WARNING: Backend version mismatch. Expected v24.0, got " + (data._backendVersion || 'Unknown'));
+                if (data._backendVersion !== '26.0') console.warn(`WARNING: Backend version mismatch. Expected v26.0, got ${data._backendVersion || 'Unknown'}. Please Re-Deploy.`);
                 return Array.isArray(data) ? data.map(normalizeKeys) : normalizeKeys(data);
             } catch (e: any) {
                 console.error("JSON Parse Error:", e.message, "Response:", text.substring(0, 100));
                 if (action.startsWith('get')) return [];
-                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v24.0).");
+                throw new Error("Invalid JSON response from server. Please Re-Deploy Script (v26.0).");
             }
         } catch (error: any) {
             attempts++;
@@ -83,7 +82,7 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
     }
 };
 
-// --- AUTH SERVICES ---
+// ... (Existing exports remain the same) ...
 
 export const loginStudent = async (studentId: string, email: string, password?: string): Promise<Student | null> => {
     try {
@@ -147,15 +146,10 @@ export const deleteUser = async (role: 'student' | 'teacher', id: string) => {
     return await apiRequest(endpoint, 'POST', { id });
 };
 
-// --- DATA SERVICES ---
-
 export const getAllTasks = async (): Promise<Task[]> => {
     try {
         const rawTasks = await apiRequest('getTasks', 'GET');
-        if (!rawTasks || !Array.isArray(rawTasks)) {
-            console.log("No tasks found or invalid format:", rawTasks);
-            return [];
-        }
+        if (!rawTasks || !Array.isArray(rawTasks)) return [];
 
         return rawTasks.map((t: any) => ({
             id: t.id ? t.id.toString() : Math.random().toString(),
@@ -183,9 +177,7 @@ export const getStudentCompletions = async (studentId: string) => {
     try {
         const res = await apiRequest('getTaskCompletions', 'GET', { studentId });
         return Array.isArray(res) ? res : [];
-    } catch (e) {
-        return [];
-    }
+    } catch (e) { return []; }
 }
 
 export const createTask = async (task: Partial<Task>) => apiRequest('createTask', 'POST', task);
@@ -195,7 +187,6 @@ export const toggleTaskStatus = async (studentId: string, taskId: string, isComp
     apiRequest('toggleTaskStatus', 'POST', { studentId, taskId, isCompleted });
 export const markNotificationRead = async (notificationId: string) => ({ success: true });
 
-// --- PORTFOLIO SERVICES ---
 export const getPortfolio = async (studentId: string): Promise<PortfolioItem[]> => {
     try {
         const raw = await apiRequest('getPortfolio', 'GET', { studentId });
@@ -213,8 +204,6 @@ export const getPortfolio = async (studentId: string): Promise<PortfolioItem[]> 
 };
 export const addPortfolioItem = async (item: Partial<PortfolioItem>) => apiRequest('addPortfolioItem', 'POST', item);
 export const deletePortfolioItem = async (id: string) => apiRequest('deletePortfolioItem', 'POST', { id });
-
-// --- USER DATA ---
 
 export const getStudentDataById = async (studentId: string | undefined): Promise<StudentData | null> => {
     if (!studentId) return null;
@@ -242,8 +231,7 @@ export const getStudentDataById = async (studentId: string | undefined): Promise
             const gradeMatch = t.targetGrade === student.grade;
             const classMatch = t.targetClassroom === student.classroom;
             const individualMatch = t.targetStudentId === student.student_id;
-            const isAssigned = (gradeMatch && classMatch) || individualMatch || (!t.targetGrade && !t.targetStudentId);
-            return isAssigned;
+            return (gradeMatch && classMatch) || individualMatch || (!t.targetGrade && !t.targetStudentId);
         }).map(t => ({ ...t, isCompleted: completedTaskIds.has(t.id) }));
 
         const notifications: Notification[] = myTasks.filter(t => !t.isCompleted).slice(0, 5).map(t => ({
@@ -292,7 +280,6 @@ export const checkDatabaseHealth = async () => {
     } catch (e) { return { tables: [], missingSql: '' }; }
 };
 
-// --- Settings ---
 export const getSystemSettings = async (): Promise<Record<string, string>> => {
     try {
         const settings = await apiRequest('getSystemSettings', 'GET');
@@ -307,7 +294,6 @@ export const getSystemSettings = async (): Promise<Record<string, string>> => {
 }
 export const saveSystemSettings = async (settings: Record<string, string>) => apiRequest('saveSystemSettings', 'POST', settings);
 
-// --- LINE ---
 const getFlexColor = (category: TaskCategory) => {
     switch (category) {
         case TaskCategory.EXAM_SCHEDULE: return "#EF4444";
@@ -339,9 +325,7 @@ export const generateTaskFlexMessage = (task: Task) => {
             header: {
                 type: "box",
                 layout: "vertical",
-                contents: [
-                    { type: "text", text: TaskCategoryLabel[task.category] || "แจ้งเตือน", color: "#ffffff", weight: "bold", size: "sm" }
-                ],
+                contents: [ { type: "text", text: TaskCategoryLabel[task.category] || "แจ้งเตือน", color: "#ffffff", weight: "bold", size: "sm" } ],
                 backgroundColor: color,
                 paddingAll: "15px"
             },
@@ -351,69 +335,24 @@ export const generateTaskFlexMessage = (task: Task) => {
                 contents: [
                     { type: "text", text: task.title, weight: "bold", size: "xl", wrap: true, color: "#1f2937" },
                     { type: "text", text: task.subject, size: "sm", color: "#6b7280", margin: "xs", weight: "bold" },
-                    
                     { type: "separator", margin: "md", color: "#e5e7eb" },
-                    
-                    // Details Grid
                     {
                         type: "box",
                         layout: "vertical",
                         margin: "md",
                         spacing: "sm",
                         contents: [
-                            {
-                                type: "box",
-                                layout: "baseline",
-                                contents: [
-                                    { type: "text", text: "📅 กำหนด:", size: "xs", color: "#9ca3af", flex: 3 },
-                                    { type: "text", text: `${dateStr} ${timeStr} น.`, size: "xs", color: "#ef4444", flex: 7, weight: "bold" }
-                                ]
-                            },
-                            {
-                                type: "box",
-                                layout: "baseline",
-                                contents: [
-                                    { type: "text", text: "👥 สำหรับ:", size: "xs", color: "#9ca3af", flex: 3 },
-                                    { type: "text", text: `ชั้น ${task.targetGrade}/${task.targetClassroom}`, size: "xs", color: "#374151", flex: 7 }
-                                ]
-                            },
-                             {
-                                type: "box",
-                                layout: "baseline",
-                                contents: [
-                                    { type: "text", text: "👤 ผู้แจ้ง:", size: "xs", color: "#9ca3af", flex: 3 },
-                                    { type: "text", text: task.createdBy || "-", size: "xs", color: "#374151", flex: 7 }
-                                ]
-                            },
-                             {
-                                type: "box",
-                                layout: "baseline",
-                                contents: [
-                                    { type: "text", text: "🕒 สร้างเมื่อ:", size: "xs", color: "#9ca3af", flex: 3 },
-                                    { type: "text", text: createDateStr, size: "xs", color: "#9ca3af", flex: 7 }
-                                ]
-                            }
+                            { type: "box", layout: "baseline", contents: [ { type: "text", text: "📅 กำหนด:", size: "xs", color: "#9ca3af", flex: 3 }, { type: "text", text: `${dateStr} ${timeStr} น.`, size: "xs", color: "#ef4444", flex: 7, weight: "bold" } ] },
+                            { type: "box", layout: "baseline", contents: [ { type: "text", text: "👥 สำหรับ:", size: "xs", color: "#9ca3af", flex: 3 }, { type: "text", text: `ชั้น ${task.targetGrade}/${task.targetClassroom}`, size: "xs", color: "#374151", flex: 7 } ] },
+                            { type: "box", layout: "baseline", contents: [ { type: "text", text: "👤 ผู้แจ้ง:", size: "xs", color: "#9ca3af", flex: 3 }, { type: "text", text: task.createdBy || "-", size: "xs", color: "#374151", flex: 7 } ] }
                         ]
-                    },
-
-                    { type: "separator", margin: "md", color: "#e5e7eb" },
-
-                    { type: "text", text: "รายละเอียดเพิ่มเติม:", size: "xs", color: "#6b7280", margin: "md", weight: "bold" },
-                    { type: "text", text: task.description || "-", size: "xs", color: "#374151", wrap: true, margin: "xs" }
+                    }
                 ]
             },
             footer: {
                 type: "box",
                 layout: "vertical",
-                contents: [
-                    {
-                        type: "button",
-                        action: { type: "uri", label: "ดูรายละเอียด", uri: APP_URL },
-                        style: "primary",
-                        color: color,
-                        height: "sm"
-                    }
-                ],
+                contents: [ { type: "button", action: { type: "uri", label: "ดูรายละเอียด", uri: APP_URL }, style: "primary", color: color, height: "sm" } ],
                 paddingAll: "15px"
             }
         }
