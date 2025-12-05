@@ -132,7 +132,8 @@ const TeacherDashboardPage: React.FC = () => {
             title: task.title,
             subject: task.subject,
             description: task.description,
-            dueDate: task.dueDate ? task.dueDate.slice(0, 16) : '',
+            // Extract YYYY-MM-DD from ISO or simple date string
+            dueDate: task.dueDate ? task.dueDate.split('T')[0] : '',
             category: task.category,
             priority: task.priority || 'Medium',
             targetGrade: task.targetGrade,
@@ -179,20 +180,23 @@ const TeacherDashboardPage: React.FC = () => {
         const allAttachments = [...existingAttachments, ...uploadedUrls];
 
         const taskPayload = {
+            id: editingTaskId || `task-${Date.now()}`,
             ...formData,
             targetStudentId: formData.targetStudentId.trim() === '' ? undefined : formData.targetStudentId.trim(),
-            dueDate: new Date(formData.dueDate).toISOString(),
+            // Ensure simple YYYY-MM-DD format as requested
+            dueDate: formData.dueDate, 
             priority: formData.priority as 'High'|'Medium'|'Low',
             attachments: allAttachments,
             createdBy: teacher.name,
+            createdAt: editingTaskId ? undefined : new Date().toISOString(),
+            isCompleted: false
         };
 
         try {
             if (editingTaskId) {
                  const result = await updateTask({
                     id: editingTaskId,
-                    ...taskPayload,
-                    createdAt: new Date().toISOString() 
+                    ...taskPayload
                 });
 
                 if (result.success) {
@@ -431,7 +435,7 @@ const TeacherDashboardPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">กำหนดส่ง / เวลากิจกรรม</label>
-                                    <input type="datetime-local" name="dueDate" value={formData.dueDate} onChange={handleChange} className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none" required />
+                                    <input type="date" name="dueDate" value={formData.dueDate} onChange={handleChange} className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none" required />
                                 </div>
                             </div>
                             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">

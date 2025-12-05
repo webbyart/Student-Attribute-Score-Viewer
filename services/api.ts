@@ -84,6 +84,7 @@ const apiRequest = async (action: string, method: 'GET' | 'POST' = 'POST', paylo
 const mapTaskToPayload = (task: Partial<Task>) => {
     const payload: any = { ...task };
     // Google Sheets headers are snake_case (defined in backend/Code.js setupSheet)
+    if (task.id) payload.id = task.id;
     if (task.dueDate) payload.due_date = task.dueDate;
     if (task.targetGrade) payload.target_grade = task.targetGrade;
     if (task.targetClassroom) payload.target_classroom = task.targetClassroom;
@@ -118,7 +119,6 @@ export const loginStudent = async (studentId: string, email: string, password?: 
                 grade: found.grade,
                 classroom: found.classroom,
                 profileImageUrl: found.profile_image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${found.student_id}`,
-                lineUserId: found.line_user_id
             };
         }
     } catch (e) {
@@ -150,15 +150,6 @@ export const loginTeacher = async (email: string, password: string): Promise<Tea
     return null;
 };
 
-export const loginWithLineCode = async (code: string, redirectUri: string): Promise<LineLoginResult> => {
-    try {
-        const result = await apiRequest('loginWithLine', 'POST', { code, redirectUri });
-        return result as LineLoginResult;
-    } catch (e: any) {
-        return { success: false, message: e.message };
-    }
-};
-
 export const registerStudent = async (data: any) => apiRequest('registerStudent', 'POST', data);
 
 // Updated to support teacher ID
@@ -178,16 +169,14 @@ export const getAllTasks = async (): Promise<Task[]> => {
         return rawTasks.map((t: any) => {
             // Safe Attachment Parsing
             let safeAttachments = [];
-            // If backend already sanitized to "[]", JSON.parse works.
-            // If it's a string from legacy, check:
             if (t.attachments && typeof t.attachments === 'string') {
                  try { 
-                     // Handle "Ljava" cases handled by backend sanitizer now returning "[]"
                      safeAttachments = JSON.parse(t.attachments); 
                  } catch(e) {
-                     // Fallback
                      safeAttachments = [];
                  }
+            } else if (Array.isArray(t.attachments)) {
+                 safeAttachments = t.attachments;
             }
 
             return {
@@ -262,7 +251,6 @@ export const getStudentDataById = async (studentId: string | undefined): Promise
             grade: found.grade,
             classroom: found.classroom,
             profileImageUrl: found.profile_image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${found.student_id}`,
-            lineUserId: found.line_user_id
         };
 
         const [allTasks, completions] = await Promise.all([getAllTasks(), getStudentCompletions(studentId)]);
@@ -337,4 +325,11 @@ export const sendCompletionNotification = async (studentName: string, taskTitle:
     return { success: true };
 };
 
-export const syncLineUserProfile = async () => {};
+export const loginWithLineCode = async (code: string, redirectUri: string): Promise<LineLoginResult> => {
+    try {
+        const result = await apiRequest('loginWithLine', 'POST', { code, redirectUri });
+        return result;
+    } catch (e: any) {
+        return { success: false, message: e.message || 'Login failed' };
+    }
+};

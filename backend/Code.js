@@ -1,7 +1,7 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 25.4 (Added LINE Login Support)
+ * Version: 25.5 (Tasks Column Fix & Remove LINE)
  */
 
 const DEFAULT_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
@@ -34,7 +34,7 @@ function handleRequest(e) {
 
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
-    if (!action) return createJSONOutput({ status: 'ok', version: '25.4' });
+    if (!action) return createJSONOutput({ status: 'ok', version: '25.5' });
 
     let ss;
     try { ss = SpreadsheetApp.openById(sheetId); } 
@@ -61,7 +61,6 @@ function handleRequest(e) {
       case 'toggleTaskStatus': result = toggleTaskCompletion(ss, payload.studentId, payload.taskId, payload.isCompleted); break;
       case 'addPortfolioItem': result = addRow(ss, 'Portfolio', payload, 'id'); break;
       case 'deletePortfolioItem': result = deleteRow(ss, 'Portfolio', payload.id, 'id'); break;
-      case 'loginWithLine': result = loginWithLine(ss, payload.code, payload.redirectUri); break;
       default: result = { error: 'Unknown Action: ' + action };
     }
 
@@ -271,66 +270,7 @@ function saveSettings(ss, payload) {
   return { success: true };
 }
 
-function loginWithLine(ss, code, redirectUri) {
-  const props = PropertiesService.getScriptProperties();
-  const CHANNEL_ID = props.getProperty('LINE_CHANNEL_ID');
-  const CHANNEL_SECRET = props.getProperty('LINE_CHANNEL_SECRET');
-
-  if (!CHANNEL_ID || !CHANNEL_SECRET) {
-    return { success: false, message: 'LINE Login not configured (Missing Channel ID/Secret in Script Properties)' };
-  }
-
-  try {
-    const tokenUrl = 'https://api.line.me/oauth2/v2.1/token';
-    const payload = {
-      grant_type: 'authorization_code',
-      code: code,
-      redirect_uri: redirectUri,
-      client_id: CHANNEL_ID,
-      client_secret: CHANNEL_SECRET
-    };
-    
-    const options = {
-      method: 'post',
-      payload: payload,
-      muteHttpExceptions: true
-    };
-    
-    const tokenResp = UrlFetchApp.fetch(tokenUrl, options);
-    if (tokenResp.getResponseCode() !== 200) {
-      return { success: false, message: 'LINE Token Error: ' + tokenResp.getContentText() };
-    }
-    
-    const tokenData = JSON.parse(tokenResp.getContentText());
-    const accessToken = tokenData.access_token;
-    
-    const profileUrl = 'https://api.line.me/v2/profile';
-    const profileResp = UrlFetchApp.fetch(profileUrl, { headers: { 'Authorization': 'Bearer ' + accessToken } });
-    const profileData = JSON.parse(profileResp.getContentText());
-    const userId = profileData.userId;
-    
-    // Check Students
-    const students = getData(ss, 'Students');
-    let user = students.find(function(s) { return String(s.line_user_id) === String(userId); });
-    let role = 'student';
-    
-    if (!user) {
-      const teachers = getData(ss, 'Teachers');
-      user = teachers.find(function(t) { return String(t.line_user_id) === String(userId); });
-      if (user) role = 'teacher';
-    }
-    
-    if (user) {
-      return { success: true, user: user, role: role, lineProfile: { userId: userId, displayName: profileData.displayName, pictureUrl: profileData.pictureUrl } };
-    } else {
-      return { success: false, lineUserId: userId, lineProfile: { userId: userId, displayName: profileData.displayName, pictureUrl: profileData.pictureUrl }, message: 'User not registered' };
-    }
-  } catch (e) {
-    return { success: false, message: 'Error: ' + e.toString() };
-  }
-}
-
-function checkHealth(ss) { return { version: '25.4', tables: [] }; }
+function checkHealth(ss) { return { version: '25.5', tables: [] }; }
 
 function setupSheet() {
   const ss = SpreadsheetApp.openById(DEFAULT_SHEET_ID);
@@ -341,8 +281,9 @@ function setupSheet() {
     return s;
   };
   
-  defineSheet('Students', ['student_id', 'student_name', 'email', 'grade', 'classroom', 'password', 'profile_image', 'line_user_id']);
-  defineSheet('Teachers', ['teacher_id', 'name', 'email', 'password', 'line_user_id']);
+  // Adjusted Tasks columns as requested
+  defineSheet('Students', ['student_id', 'student_name', 'email', 'grade', 'classroom', 'password', 'profile_image']);
+  defineSheet('Teachers', ['teacher_id', 'name', 'email', 'password']);
   defineSheet('Tasks', ['id', 'title', 'subject', 'description', 'due_date', 'category', 'priority', 'target_grade', 'target_classroom', 'target_student_id', 'created_by', 'attachments', 'is_completed', 'created_at']);
   defineSheet('Timetable', ['id', 'grade', 'classroom', 'day_of_week', 'period_index', 'period_time', 'subject', 'teacher', 'room']);
   defineSheet('SystemSettings', ['key', 'value']);

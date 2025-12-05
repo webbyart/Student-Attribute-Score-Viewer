@@ -3,7 +3,6 @@ import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, Outlet, NavLink } from 'react-router-dom';
 import { TeacherAuthProvider, useTeacherAuth } from './contexts/TeacherAuthContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { syncLineUserProfile } from './services/api';
 
 // Page Imports
 import PublicCalendarPage from './pages/PublicCalendarPage';
@@ -45,10 +44,6 @@ const ProtectedTeacherRoute: React.FC = () => {
 const ProtectedStudentRoute: React.FC = () => {
   const { user, loading } = useAuth();
   
-  useEffect(() => {
-     if (user) syncLineUserProfile();
-  }, [user]);
-
   if (loading) return <div className="flex justify-center items-center h-screen"><div>Loading...</div></div>;
   return user ? <Outlet /> : <Navigate to="/student/login" />;
 }
