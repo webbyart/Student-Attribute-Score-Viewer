@@ -1,7 +1,7 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 25.5 (Tasks Column Fix & Remove LINE)
+ * Version: 25.6 (Bulk Import Support)
  */
 
 const DEFAULT_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
@@ -34,7 +34,7 @@ function handleRequest(e) {
 
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
-    if (!action) return createJSONOutput({ status: 'ok', version: '25.5' });
+    if (!action) return createJSONOutput({ status: 'ok', version: '25.6' });
 
     let ss;
     try { ss = SpreadsheetApp.openById(sheetId); } 
@@ -52,6 +52,7 @@ function handleRequest(e) {
       case 'getTimetable': result = getData(ss, 'Timetable'); break;
       case 'getPortfolio': result = getPortfolio(ss, payload.studentId || params.studentId); break;
       case 'registerStudent': result = addRow(ss, 'Students', payload, 'student_id'); break;
+      case 'bulkRegisterStudents': result = bulkAddRows(ss, 'Students', payload.students, 'student_id'); break; // NEW
       case 'registerTeacher': result = addRow(ss, 'Teachers', payload, 'teacher_id'); break; 
       case 'deleteStudent': result = deleteRow(ss, 'Students', payload.id, 'student_id'); break;
       case 'deleteTeacher': result = deleteRow(ss, 'Teachers', payload.id, 'teacher_id'); break;
@@ -185,12 +186,33 @@ function addRow(ss, sheetName, data, keyField) {
   for (var i = 0; i < headers.length; i++) {
     var h = String(headers[i]).trim().toLowerCase().replace(/\s/g, '_');
     var val = data[h] !== undefined ? data[h] : '';
-    // Prevent Java Object creation by stringifying arrays/objects before writing
     if (Array.isArray(val) || (typeof val === 'object' && val !== null)) val = JSON.stringify(val);
     row.push(val);
   }
   sheet.appendRow(row);
   return { success: true, id: data.id };
+}
+
+function bulkAddRows(ss, sheetName, studentsArray, keyField) {
+  if (!Array.isArray(studentsArray) || studentsArray.length === 0) return { success: false, message: "No data provided" };
+  
+  let successCount = 0;
+  let errors = [];
+
+  // We loop here in backend to be faster than HTTP loop
+  // For simplicity, we reuse addRow logic but optimized could be done. 
+  // Given standard use (<500 rows), simple loop is fine in GAS V8.
+  for (var i = 0; i < studentsArray.length; i++) {
+    try {
+      var res = addRow(ss, sheetName, studentsArray[i], keyField);
+      if (res.success) successCount++;
+      else errors.push(studentsArray[i][keyField] + ": failed");
+    } catch(e) {
+      errors.push(studentsArray[i][keyField] + ": " + e.toString());
+    }
+  }
+  
+  return { success: true, count: successCount, errors: errors };
 }
 
 function updateRow(ss, sheetName, id, updates, keyField) {
@@ -270,7 +292,7 @@ function saveSettings(ss, payload) {
   return { success: true };
 }
 
-function checkHealth(ss) { return { version: '25.5', tables: [] }; }
+function checkHealth(ss) { return { version: '25.6', tables: [] }; }
 
 function setupSheet() {
   const ss = SpreadsheetApp.openById(DEFAULT_SHEET_ID);
@@ -281,7 +303,6 @@ function setupSheet() {
     return s;
   };
   
-  // Adjusted Tasks columns as requested
   defineSheet('Students', ['student_id', 'student_name', 'email', 'grade', 'classroom', 'password', 'profile_image']);
   defineSheet('Teachers', ['teacher_id', 'name', 'email', 'password']);
   defineSheet('Tasks', ['id', 'title', 'subject', 'description', 'due_date', 'category', 'priority', 'target_grade', 'target_classroom', 'target_student_id', 'created_by', 'attachments', 'is_completed', 'created_at']);

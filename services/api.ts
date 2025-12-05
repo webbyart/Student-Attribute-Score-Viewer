@@ -281,14 +281,11 @@ export const getProfiles = async (role: 'student' | 'teacher') => {
     return Array.isArray(res) ? res : [];
 };
 export const updateProfile = async (id: string, data: any) => apiRequest('registerStudent', 'POST', data); 
+
 export const bulkRegisterStudents = async (students: any[]) => {
-    let count = 0;
-    const errors = [];
-    for (const s of students) {
-        try { await registerStudent(s); count++; } catch (e: any) { errors.push(`${s.student_id}: ${e.message}`); }
-    }
-    return { success: count > 0, count, errors };
+    return await apiRequest('bulkRegisterStudents', 'POST', { students });
 };
+
 export const uploadFile = async (file: File): Promise<string> => 
     new Promise((resolve) => setTimeout(() => resolve(`https://via.placeholder.com/300?text=${encodeURIComponent(file.name)}`), 1000));
 export const getTimetable = async (grade: string, classroom: string) => {

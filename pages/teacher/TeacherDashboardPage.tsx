@@ -13,7 +13,8 @@ import {
     registerTeacher,
     getTimetable,
     deleteUser,
-    registerStudent
+    registerStudent,
+    bulkRegisterStudents
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor, TimetableEntry } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
@@ -45,6 +46,7 @@ const TeacherDashboardPage: React.FC = () => {
     const [userSearch, setUserSearch] = useState('');
     const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
     const [userToDelete, setUserToDelete] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     
     // DB Health Check State
     const [dbHealth, setDbHealth] = useState<{name: string, status: string}[]>([]);
@@ -316,6 +318,122 @@ const TeacherDashboardPage: React.FC = () => {
         setIsConfirmDeleteUserOpen(false);
     };
     
+    // --- CSV Helper Functions ---
+
+    const handleExportCSV = () => {
+        // Headers consistent with import expectations
+        const headers = ["student_id", "student_name", "email", "grade", "classroom", "password"];
+        
+        // Use filteredUsers (current view) or all users of current type
+        const dataToExport = filteredUsers.length > 0 ? filteredUsers : users;
+
+        // Convert to CSV string
+        const csvRows = [
+            headers.join(','),
+            ...dataToExport.map(user => {
+                // Ensure values don't have commas that break CSV
+                const safe = (val: string) => `"${String(val || '').replace(/"/g, '""')}"`;
+                return [
+                    safe(user.student_id || user.teacher_id),
+                    safe(user.student_name || user.name),
+                    safe(user.email),
+                    safe(user.grade || ''),
+                    safe(user.classroom || ''),
+                    safe('123456') // Placeholder or skip password for security
+                ].join(',');
+            })
+        ];
+        
+        const csvString = '\uFEFF' + csvRows.join('\n'); // Add BOM for Excel Thai support
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `${userType}_list.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleImportClick = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const text = e.target?.result as string;
+            if (!text) return;
+
+            // Simple CSV Parser
+            const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            
+            const newStudents = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                // Handle split by comma but ignore commas inside quotes
+                const currentLine = lines[i];
+                // Regex matches: "quoted,text", or unquoted,text
+                const matches = currentLine.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || currentLine.split(',');
+                
+                const values = matches.map((val: string) => val.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+
+                if (values.length >= 2) { // Minimum check
+                    const entry: any = {};
+                    // Map known headers
+                    const getCol = (name: string) => {
+                        const idx = headers.findIndex(h => h.toLowerCase().includes(name));
+                        return idx !== -1 ? values[idx] : '';
+                    };
+
+                    // Student mapping
+                    if (userType === 'student') {
+                        entry.student_id = getCol('student_id') || values[0];
+                        entry.student_name = getCol('name') || values[1];
+                        entry.email = getCol('email') || values[2];
+                        entry.grade = getCol('grade') || 'ม.3';
+                        entry.classroom = getCol('classroom') || '3';
+                        entry.password = getCol('password') || '123456';
+                        entry.profile_image = ''; // Default empty
+                        
+                        if (entry.student_id && entry.student_name) newStudents.push(entry);
+                    }
+                }
+            }
+
+            if (newStudents.length > 0) {
+                const confirmMsg = `พบข้อมูล ${newStudents.length} รายการ คุณต้องการนำเข้าหรือไม่?`;
+                if (window.confirm(confirmMsg)) {
+                    setIsSubmitting(true);
+                    try {
+                        const result = await bulkRegisterStudents(newStudents);
+                        if (result.success) {
+                            alert(`นำเข้าสำเร็จ: ${result.count} รายการ`);
+                            loadUsers();
+                        } else {
+                            alert('นำเข้าล้มเหลว: ' + result.message);
+                        }
+                    } catch (err: any) {
+                        alert('Error: ' + err.message);
+                    }
+                    setIsSubmitting(false);
+                }
+            } else {
+                alert('ไม่พบข้อมูลที่ถูกต้องในไฟล์ CSV');
+            }
+            
+            // Reset input
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+        reader.readAsText(file);
+    };
+
     // ... Event handlers
     const handleDateClick = (date: Date, dayTasks: Task[]) => {
         setSelectedDate(date);
@@ -344,11 +462,17 @@ const TeacherDashboardPage: React.FC = () => {
         return matchesSearch && matchesGrade && matchesClass && matchesType;
     });
 
-    const filteredUsers = users.filter(u => 
-        u.full_name?.toLowerCase().includes(userSearch.toLowerCase()) ||
-        u.name?.toLowerCase().includes(userSearch.toLowerCase()) ||
-        (u.student_id && u.student_id.toLowerCase().includes(userSearch.toLowerCase()))
-    );
+    const filteredUsers = users.filter(u => {
+        const term = userSearch.toLowerCase();
+        // Combine name fields checks and safe string conversion
+        const name = String(u.student_name || u.full_name || u.name || '').toLowerCase();
+        // Safe string conversion for IDs which might be numbers from Google Sheet
+        const studentId = u.student_id ? String(u.student_id).toLowerCase() : '';
+        const teacherId = u.teacher_id ? String(u.teacher_id).toLowerCase() : '';
+        const email = String(u.email || '').toLowerCase();
+        
+        return name.includes(term) || studentId.includes(term) || teacherId.includes(term) || email.includes(term);
+    });
 
     // Stats for Main Menu (Specific Order requested by User)
     const specificCategories = [
@@ -485,14 +609,41 @@ const TeacherDashboardPage: React.FC = () => {
                             <button onClick={() => setUserType('teacher')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${userType === 'teacher' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>ครู/บุคลากร</button>
                         </div>
                         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 flex flex-col md:flex-row justify-between items-center gap-4">
-                            <div className="flex-1 w-full md:w-auto">
+                            <div className="flex-1 w-full md:w-auto flex gap-2">
                                 <button 
                                     onClick={() => setIsAddUserModalOpen(true)}
-                                    className="w-full bg-purple-600 text-white font-bold py-2 px-4 rounded-xl shadow-md hover:bg-purple-700 transition flex items-center justify-center gap-2 text-sm"
+                                    className="flex-1 bg-purple-600 text-white font-bold py-2 px-4 rounded-xl shadow-md hover:bg-purple-700 transition flex items-center justify-center gap-2 text-sm"
                                 >
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                                    เพิ่ม{userType === 'student' ? 'นักเรียน' : 'ครู'}ใหม่
+                                    เพิ่ม{userType === 'student' ? 'นักเรียน' : 'ครู'}
                                 </button>
+                                {userType === 'student' && (
+                                    <>
+                                        <button 
+                                            onClick={handleExportCSV}
+                                            className="px-4 bg-green-500 text-white font-bold py-2 rounded-xl shadow-md hover:bg-green-600 transition flex items-center justify-center gap-1 text-sm"
+                                            title="Export CSV"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                            Export
+                                        </button>
+                                        <button 
+                                            onClick={handleImportClick}
+                                            className="px-4 bg-blue-500 text-white font-bold py-2 rounded-xl shadow-md hover:bg-blue-600 transition flex items-center justify-center gap-1 text-sm"
+                                            title="Import CSV"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                            Import
+                                        </button>
+                                        <input 
+                                            type="file" 
+                                            ref={fileInputRef} 
+                                            onChange={handleFileChange} 
+                                            className="hidden" 
+                                            accept=".csv" 
+                                        />
+                                    </>
+                                )}
                             </div>
                         </div>
                         
