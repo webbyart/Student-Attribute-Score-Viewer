@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { loginWithLineCode } from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
-import { useTeacherAuth } from '../contexts/TeacherAuthContext';
 import { Role } from '../types';
 import LoadingSpinner from '../components/ui/LoadingSpinner';
 
@@ -13,11 +11,12 @@ const LineCallbackPage: React.FC = () => {
 
     useEffect(() => {
         const handleCallback = async () => {
-            // 1. ดึง URL ปัจจุบันมาแกะหา code โดยตรง (ไม่พึ่ง searchParams ของ Router)
-            // วิธีนี้ช่วยแก้ปัญหาเวลา LINE ส่ง params มาก่อนเครื่องหมาย # (เช่น /?code=...#/callback)
+            // 1. Get the FULL URL to parse params regardless of Router placement
             const currentUrl = window.location.href;
             
-            // Regex ค้นหา code=... และ state=... ไม่ว่าจะอยู่ตรงไหนของ URL
+            // Regex to find code/state/error. 
+            // Matches ?code=... or &code=... 
+            // Stops at & or # (unless # is part of the fragment start, handled by logic below)
             const codeMatch = currentUrl.match(/[?&]code=([^&]+)/);
             const stateMatch = currentUrl.match(/[?&]state=([^&]+)/);
             const errorMatch = currentUrl.match(/[?&]error=([^&]+)/);
@@ -28,15 +27,11 @@ const LineCallbackPage: React.FC = () => {
             let error = errorMatch ? errorMatch[1] : null;
             let errorDesc = errorDescMatch ? errorDescMatch[1] : null;
 
-            // ถ้า code ติดเครื่องหมาย # มาด้วย ให้ตัดออก (เช่น code=xyz#/line-callback)
-            if (code && code.includes('#')) {
-                code = code.split('#')[0];
-            }
-            if (state && state.includes('#')) {
-                state = state.split('#')[0];
-            }
+            // Cleanup: If code captured the hash (e.g. "abc#/line-callback"), strip it
+            if (code && code.includes('#')) code = code.split('#')[0];
+            if (state && state.includes('#')) state = state.split('#')[0];
 
-            console.log("LINE Callback Parsed:", { code, state, error });
+            console.log("LINE Callback Debug:", { code, state, error, currentUrl });
 
             if (error) {
                 setStatus('เกิดข้อผิดพลาดจาก LINE: ' + (decodeURIComponent(errorDesc || error)));
@@ -50,11 +45,15 @@ const LineCallbackPage: React.FC = () => {
             }
 
             try {
-                // 2. กำหนด Redirect URI ให้ตรงกับหน้า Login (ต้องตรงกันเป๊ะๆ 100%)
-                // เนื่องจากในหน้า Login เราบังคับใช้ URL ของ Netlify ดังนั้นที่นี่ก็ต้องใช้เหมือนกัน
-                const redirectUri = 'https://student-homework.netlify.app/#/line-callback';
+                // 2. Generate Redirect URI strictly consistent with Login Pages
+                const origin = window.location.origin;
+                // Ensure pathname doesn't end with slash to avoid //#/
+                const pathname = window.location.pathname.replace(/\/$/, ''); 
+                const redirectUri = `${origin}${pathname}/#/line-callback`;
                 
                 setStatus('กำลังตรวจสอบข้อมูลผู้ใช้...');
+                // console.log("Verifying with Redirect URI:", redirectUri);
+
                 const result = await loginWithLineCode(code, redirectUri);
 
                 if (result.success && result.user) {
@@ -71,7 +70,7 @@ const LineCallbackPage: React.FC = () => {
                             role: Role.STUDENT,
                         };
                         sessionStorage.setItem('studentUser', JSON.stringify(studentUser));
-                        // ใช้ window.location เพื่อบังคับโหลดใหม่และเคลียร์ URL params
+                        // Force reload to clear URL params
                         window.location.href = `#/student/${result.user.student_id}`;
                         window.location.reload();
 
@@ -97,7 +96,7 @@ const LineCallbackPage: React.FC = () => {
                          }, 1500);
                     } else {
                         setStatus('เข้าสู่ระบบล้มเหลว: ' + (result.message || 'ไม่พบผู้ใช้นี้ในระบบ'));
-                        setDebugInfo('Account not found in Google Sheets');
+                        setDebugInfo(JSON.stringify(result));
                         setTimeout(() => navigate('/login-select'), 3000);
                     }
                 }
@@ -116,7 +115,7 @@ const LineCallbackPage: React.FC = () => {
             <LoadingSpinner />
             <p className="mt-4 text-slate-600 font-medium text-center">{status}</p>
             {debugInfo && (
-                <div className="mt-4 p-3 bg-gray-100 rounded text-xs text-gray-500 max-w-md break-all border border-gray-200">
+                <div className="mt-4 p-3 bg-gray-100 rounded-lg text-[10px] text-gray-500 max-w-md break-all border border-gray-200 font-mono">
                     <p className="font-bold mb-1">Debug Info:</p>
                     {debugInfo}
                 </div>

@@ -16,14 +16,12 @@ const TeacherLoginPage: React.FC = () => {
         try {
             const settings = await getSystemSettings();
             if (settings && settings['line_login_channel_id']) {
-                
-                // ใช้ URL ของ Netlify โดยตรงเลย เพื่อความชัวร์ที่สุด
-                const myDomain = 'https://student-homework.netlify.app';
-                
-                // สร้าง Redirect URL
-                const redirect = myDomain + '/#/line-callback';
+                // Generate consistent Redirect URI
+                const origin = window.location.origin;
+                const pathname = window.location.pathname.replace(/\/$/, '');
+                const redirect = `${origin}${pathname}/#/line-callback`;
 
-                console.log("Registered Redirect URI:", redirect); 
+                // console.log("Teacher Login Redirect URI:", redirect); 
                 setLineLoginUrl(getLineLoginUrl(settings['line_login_channel_id'], redirect, 'teacher'));
             }
         } catch (e) {
@@ -53,9 +51,7 @@ const TeacherLoginPage: React.FC = () => {
   const handleLineLoginClick = (e: React.MouseEvent) => {
       e.preventDefault();
       if (lineLoginUrl) {
-          console.log("Opening LINE Login URL:", lineLoginUrl);
-          // ใช้ window.open เพื่อหลบ Sandbox ของ AI Studio (ถูกต้องแล้ว)
-          window.open(lineLoginUrl, "_blank");
+          window.top.location.href = lineLoginUrl;
       }
   };
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,7 +17,11 @@ const StudentSearchPage: React.FC = () => {
     const setupLine = async () => {
         const settings = await getSystemSettings();
         if (settings['line_login_channel_id']) {
-            const redirect = window.location.origin + window.location.pathname + '#/line-callback';
+            // Generate consistent Redirect URI
+            const origin = window.location.origin;
+            const pathname = window.location.pathname.replace(/\/$/, '');
+            const redirect = `${origin}${pathname}/#/line-callback`;
+            
             setLineLoginUrl(getLineLoginUrl(settings['line_login_channel_id'], redirect, 'student'));
         }
     };
@@ -46,7 +49,7 @@ const StudentSearchPage: React.FC = () => {
   const handleLineLoginClick = (e: React.MouseEvent) => {
       e.preventDefault();
       if (lineLoginUrl) {
-          // Force top level navigation to break out of iframes (AI Preview, etc)
+          // Force top level navigation
           window.top.location.href = lineLoginUrl;
       }
   };
