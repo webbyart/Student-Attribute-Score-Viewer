@@ -1,7 +1,7 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 25.6 (Bulk Import Support)
+ * Version: 25.8 (Task Attachments & Flex Message)
  */
 
 const DEFAULT_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
@@ -34,7 +34,7 @@ function handleRequest(e) {
 
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
-    if (!action) return createJSONOutput({ status: 'ok', version: '25.6' });
+    if (!action) return createJSONOutput({ status: 'ok', version: '25.8' });
 
     let ss;
     try { ss = SpreadsheetApp.openById(sheetId); } 
@@ -52,13 +52,19 @@ function handleRequest(e) {
       case 'getTimetable': result = getData(ss, 'Timetable'); break;
       case 'getPortfolio': result = getPortfolio(ss, payload.studentId || params.studentId); break;
       case 'registerStudent': result = addRow(ss, 'Students', payload, 'student_id'); break;
-      case 'bulkRegisterStudents': result = bulkAddRows(ss, 'Students', payload.students, 'student_id'); break; // NEW
+      case 'bulkRegisterStudents': result = bulkAddRows(ss, 'Students', payload.students, 'student_id'); break;
       case 'registerTeacher': result = addRow(ss, 'Teachers', payload, 'teacher_id'); break; 
       case 'deleteStudent': result = deleteRow(ss, 'Students', payload.id, 'student_id'); break;
       case 'deleteTeacher': result = deleteRow(ss, 'Teachers', payload.id, 'teacher_id'); break;
-      case 'createTask': result = addRow(ss, 'Tasks', payload, 'id'); break;
+      case 'createTask': 
+          result = addRow(ss, 'Tasks', payload, 'id'); 
+          // After creating task, we simulate sending LINE Flex Message logic (no actual send here without token, but ready)
+          broadcastTaskLineMessage(payload);
+          break;
       case 'updateTask': result = updateRow(ss, 'Tasks', payload.id, payload.payload, 'id'); break;
       case 'deleteTask': result = deleteRow(ss, 'Tasks', payload.id, 'id'); break;
+      case 'createTimetableEntry': result = addRow(ss, 'Timetable', payload, 'id'); break; 
+      case 'deleteTimetableEntry': result = deleteRow(ss, 'Timetable', payload.id, 'id'); break;
       case 'toggleTaskStatus': result = toggleTaskCompletion(ss, payload.studentId, payload.taskId, payload.isCompleted); break;
       case 'addPortfolioItem': result = addRow(ss, 'Portfolio', payload, 'id'); break;
       case 'deletePortfolioItem': result = deleteRow(ss, 'Portfolio', payload.id, 'id'); break;
@@ -199,9 +205,6 @@ function bulkAddRows(ss, sheetName, studentsArray, keyField) {
   let successCount = 0;
   let errors = [];
 
-  // We loop here in backend to be faster than HTTP loop
-  // For simplicity, we reuse addRow logic but optimized could be done. 
-  // Given standard use (<500 rows), simple loop is fine in GAS V8.
   for (var i = 0; i < studentsArray.length; i++) {
     try {
       var res = addRow(ss, sheetName, studentsArray[i], keyField);
@@ -292,7 +295,7 @@ function saveSettings(ss, payload) {
   return { success: true };
 }
 
-function checkHealth(ss) { return { version: '25.6', tables: [] }; }
+function checkHealth(ss) { return { version: '25.8', tables: [] }; }
 
 function setupSheet() {
   const ss = SpreadsheetApp.openById(DEFAULT_SHEET_ID);
@@ -310,4 +313,256 @@ function setupSheet() {
   defineSheet('SystemSettings', ['key', 'value']);
   defineSheet('TaskCompletions', ['student_id', 'task_id', 'is_completed', 'updated_at']);
   defineSheet('Portfolio', ['id', 'student_id', 'title', 'description', 'category', 'image_url', 'date']);
+}
+
+// --- LINE FLEX MESSAGE LOGIC ---
+function broadcastTaskLineMessage(task) {
+  // 1. Get Settings for Token (Simulated)
+  // const token = getSettings(SpreadsheetApp.openById(DEFAULT_SHEET_ID))['line_token'];
+  // if (!token) return;
+
+  // 2. Format Date
+  const dateObj = new Date(task.due_date || task.dueDate);
+  const dateStr = dateObj.toLocaleDateString('th-TH', {day: 'numeric', month: 'short', year: 'numeric'});
+  const timeStr = dateObj.toLocaleTimeString('th-TH', {hour: '2-digit', minute: '2-digit'});
+
+  // 3. Category Label & Color
+  const catLabel = task.category === 'HOMEWORK' ? 'การบ้าน' : 
+                   task.category === 'EXAM_SCHEDULE' ? 'ตารางสอบ' : 
+                   task.category === 'CLASS_SCHEDULE' ? 'ตารางเรียน' : 'กิจกรรม';
+  
+  const attachments = task.attachments ? (Array.isArray(task.attachments) ? task.attachments : JSON.parse(task.attachments)) : [];
+  const fileCount = attachments.length;
+
+  // 4. Construct Flex Message
+  const flexMessage = {
+    "type": "flex",
+    "altText": `แจ้งเตือน: ${task.title}`,
+    "contents": {
+      "type": "bubble",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": catLabel,
+            "color": "#ffffff",
+            "weight": "bold",
+            "size": "lg"
+          }
+        ],
+        "backgroundColor": "#FF6B00", // Orange as requested
+        "paddingAll": "15px"
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": task.title,
+            "weight": "bold",
+            "size": "xl",
+            "wrap": true,
+            "margin": "none"
+          },
+          {
+            "type": "text",
+            "text": `วิชา${task.subject}`,
+            "size": "sm",
+            "color": "#888888",
+            "margin": "sm"
+          },
+          {
+            "type": "separator",
+            "margin": "md"
+          },
+          {
+            "type": "box",
+            "layout": "vertical",
+            "margin": "md",
+            "spacing": "sm",
+            "contents": [
+              {
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                  {
+                    "type": "icon",
+                    "url": "https://cdn-icons-png.flaticon.com/512/2693/2693507.png",
+                    "size": "sm"
+                  },
+                  {
+                    "type": "text",
+                    "text": "กำหนด:",
+                    "color": "#aaaaaa",
+                    "size": "sm",
+                    "flex": 2
+                  },
+                  {
+                    "type": "text",
+                    "text": `${dateStr} ${timeStr} น.`,
+                    "wrap": true,
+                    "color": "#D32F2F", // Red for date
+                    "size": "sm",
+                    "flex": 5,
+                    "weight": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                  {
+                     "type": "icon",
+                     "url": "https://cdn-icons-png.flaticon.com/512/1256/1256650.png",
+                     "size": "sm"
+                  },
+                  {
+                    "type": "text",
+                    "text": "สำหรับ:",
+                    "color": "#aaaaaa",
+                    "size": "sm",
+                    "flex": 2
+                  },
+                  {
+                    "type": "text",
+                    "text": `ชั้น ${task.targetGrade || task.target_grade}/${task.targetClassroom || task.target_classroom}`,
+                    "wrap": true,
+                    "color": "#666666",
+                    "size": "sm",
+                    "flex": 5
+                  }
+                ]
+              },
+               {
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                  {
+                     "type": "icon",
+                     "url": "https://cdn-icons-png.flaticon.com/512/1077/1077114.png",
+                     "size": "sm"
+                  },
+                  {
+                    "type": "text",
+                    "text": "ผู้แจ้ง:",
+                    "color": "#aaaaaa",
+                    "size": "sm",
+                    "flex": 2
+                  },
+                  {
+                    "type": "text",
+                    "text": task.createdBy || task.created_by,
+                    "wrap": true,
+                    "color": "#666666",
+                    "size": "sm",
+                    "flex": 5
+                  }
+                ]
+              },
+               {
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                   {
+                     "type": "icon",
+                     "url": "https://cdn-icons-png.flaticon.com/512/2088/2088617.png",
+                     "size": "sm"
+                  },
+                  {
+                    "type": "text",
+                    "text": "สร้างเมื่อ:",
+                    "color": "#aaaaaa",
+                    "size": "sm",
+                    "flex": 2
+                  },
+                  {
+                    "type": "text",
+                    "text": new Date().toLocaleDateString('th-TH', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}),
+                    "wrap": true,
+                    "color": "#999999",
+                    "size": "sm",
+                    "flex": 5
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "separator",
+            "margin": "md"
+          },
+          {
+             "type": "text",
+             "text": "รายละเอียดเพิ่มเติม:",
+             "size": "xs",
+             "color": "#aaaaaa",
+             "margin": "md"
+          },
+          {
+            "type": "text",
+            "text": task.description || '-',
+            "wrap": true,
+            "color": "#333333",
+            "size": "sm",
+            "margin": "sm"
+          }
+        ]
+      },
+      "footer": {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "button",
+            "style": "primary",
+            "height": "sm",
+            "action": {
+              "type": "uri",
+              "label": "ดูรายละเอียด",
+              "uri": "https://liff.line.me/YOUR_LIFF_ID" // Placeholder
+            },
+            "color": "#FF6B00"
+          }
+        ],
+        "paddingAll": "20px"
+      }
+    }
+  };
+
+  // 5. Add Attachment Indicator if files exist
+  if (fileCount > 0) {
+    flexMessage.contents.body.contents.push({
+         "type": "separator",
+         "margin": "md"
+    });
+    flexMessage.contents.body.contents.push({
+        "type": "box",
+        "layout": "baseline",
+        "margin": "md",
+        "contents": [
+            {
+                "type": "icon",
+                "url": "https://cdn-icons-png.flaticon.com/512/2965/2965335.png", // Paperclip icon
+                "size": "sm"
+            },
+            {
+                "type": "text",
+                "text": `มีไฟล์แนบ ${fileCount} ไฟล์ (PDF/Img)`,
+                "size": "sm",
+                "color": "#1DB446", // Line Green or generic file color
+                "weight": "bold",
+                "margin": "sm"
+            }
+        ]
+    });
+  }
+
+  // 6. Execute Send (Mock logic for now, you would use UrlFetchApp here)
+  Logger.log(JSON.stringify(flexMessage));
+  // UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { ... })
 }

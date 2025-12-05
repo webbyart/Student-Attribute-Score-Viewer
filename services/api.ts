@@ -4,7 +4,7 @@ import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Timeta
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
 // ⚠️⚠️ IMPORTANT: Replace this URL with your NEW deployment URL ⚠️⚠️
-export const API_URL = 'https://script.google.com/macros/s/AKfycbxkYqhh3xsd-pV9ERZjrRLPzzaNbPpdCazl2NrqfQZnz7IrNmbru8E7u2F8eKzlt4yJ/exec'; 
+export const API_URL = 'https://script.google.com/macros/s/AKfycbzp2yXkzjOamHrMYlIej_Z9iUaxUGOGeJjr3DGetTiJ43pQNXr_7uzv8p66doASl7f6/exec'; 
 
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
 
@@ -171,9 +171,12 @@ export const getAllTasks = async (): Promise<Task[]> => {
             let safeAttachments = [];
             if (t.attachments && typeof t.attachments === 'string') {
                  try { 
+                     // Try parsing JSON array
                      safeAttachments = JSON.parse(t.attachments); 
+                     if (!Array.isArray(safeAttachments)) safeAttachments = [];
                  } catch(e) {
-                     safeAttachments = [];
+                     // If not JSON, treat as single string or empty
+                     safeAttachments = t.attachments ? [t.attachments] : [];
                  }
             } else if (Array.isArray(t.attachments)) {
                  safeAttachments = t.attachments;
@@ -216,6 +219,10 @@ export const deleteTask = async (taskId: string) => apiRequest('deleteTask', 'PO
 export const toggleTaskStatus = async (studentId: string, taskId: string, isCompleted: boolean) => 
     apiRequest('toggleTaskStatus', 'POST', { studentId, taskId, isCompleted });
 export const markNotificationRead = async (notificationId: string) => ({ success: true });
+
+// New Timetable Functions
+export const createTimetableEntry = async (entry: Partial<TimetableEntry>) => apiRequest('createTimetableEntry', 'POST', entry);
+export const deleteTimetableEntry = async (id: string) => apiRequest('deleteTimetableEntry', 'POST', { id });
 
 export const getPortfolio = async (studentId: string): Promise<PortfolioItem[]> => {
     try {
@@ -286,8 +293,15 @@ export const bulkRegisterStudents = async (students: any[]) => {
     return await apiRequest('bulkRegisterStudents', 'POST', { students });
 };
 
+// MOCK UPLOAD: In real app, this sends to Google Drive via Apps Script and returns URL
 export const uploadFile = async (file: File): Promise<string> => 
-    new Promise((resolve) => setTimeout(() => resolve(`https://via.placeholder.com/300?text=${encodeURIComponent(file.name)}`), 1000));
+    new Promise((resolve) => {
+        setTimeout(() => {
+            // Mimic a real URL with correct extension so FileChip renders correct icon
+            resolve(`https://mock-storage.com/${encodeURIComponent(file.name)}`);
+        }, 800);
+    });
+
 export const getTimetable = async (grade: string, classroom: string) => {
     try {
         const all = await apiRequest('getTimetable', 'GET');

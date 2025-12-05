@@ -76,22 +76,23 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose }) => {
                 </p>
             </div>
 
+            {/* Attachment Section */}
             {task.attachments.length > 0 && (
                 <div className="pt-4 border-t border-slate-100">
                     <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                        <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                         เอกสารแนบ ({task.attachments.length})
                     </h3>
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
                         {task.attachments.map((file, i) => (
-                            <FileChip key={i} filename={file} className="bg-slate-50 w-full" />
+                            <FileChip key={i} filename={file} className="bg-white w-full border border-slate-200 shadow-sm" />
                         ))}
                     </div>
                 </div>
             )}
             
             <button onClick={onClose} className="w-full py-3 bg-blue-500 text-white rounded-xl font-bold shadow-md hover:bg-blue-600 transition">
-                ดูรายละเอียด
+                ปิดหน้าต่าง
             </button>
         </div>
       </div>

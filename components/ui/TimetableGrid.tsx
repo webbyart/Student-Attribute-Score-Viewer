@@ -20,6 +20,16 @@ const dayStyles: Record<string, { gradient: string, shadow: string, border: stri
     'Friday': { gradient: 'from-sky-200 to-blue-400', shadow: 'shadow-blue-200', border: 'border-blue-100' }
 };
 
+const DEFAULT_PERIODS = [
+    { label: 'คาบที่ 1', time: '08:15 - 09:05', index: 1 },
+    { label: 'คาบที่ 2', time: '09:05 - 09:55', index: 2 },
+    { label: 'คาบที่ 3', time: '10:10 - 11:00', index: 3 },
+    { label: 'พักเที่ยง', time: '11:50 - 12:40', index: 99, isBreak: true },
+    { label: 'คาบที่ 4', time: '12:40 - 13:30', index: 4 },
+    { label: 'คาบที่ 5', time: '13:30 - 14:20', index: 5 },
+    { label: 'คาบที่ 6', time: '14:20 - 15:10', index: 6 }
+];
+
 interface TimetableGridProps {
     grade: string;
     classroom: string;
@@ -27,29 +37,16 @@ interface TimetableGridProps {
     onClassroomChange: (val: string) => void;
     scheduleData: TimetableEntry[];
     loading: boolean;
+    onSlotDoubleClick?: (day: string, periodIndex: number, time: string, currentEntry?: TimetableEntry) => void;
 }
 
-const TimetableGrid: React.FC<TimetableGridProps> = ({ grade, classroom, onGradeChange, onClassroomChange, scheduleData, loading }) => {
+const TimetableGrid: React.FC<TimetableGridProps> = ({ grade, classroom, onGradeChange, onClassroomChange, scheduleData, loading, onSlotDoubleClick }) => {
     
-    // Get unique periods for column headers
-    const uniquePeriods = Array.from(new Set(scheduleData.map(s => s.period_time))).sort();
-    
-    // Sort logic to ensure periods are ordered by index
-    const sortedPeriods = scheduleData
-        .reduce((acc: {time: string, index: number}[], curr) => {
-            if (!acc.find(p => p.time === curr.period_time)) {
-                acc.push({ time: curr.period_time, index: curr.period_index });
-            }
-            return acc;
-        }, [])
-        .sort((a, b) => a.index - b.index)
-        .map(p => p.time);
-    
-    // If no data, use default periods to maintain structure
-    const displayPeriods = sortedPeriods.length > 0 ? sortedPeriods : ['08:30', '09:20', '10:10', '11:00', '12:50', '13:40'];
+    // Instead of dynamic, we use the specific period structure requested
+    const displayPeriods = DEFAULT_PERIODS;
 
-    const getEntry = (day: string, time: string) => {
-        return scheduleData.find(s => s.day_of_week === day && s.period_time === time);
+    const getEntry = (day: string, index: number) => {
+        return scheduleData.find(s => s.day_of_week === day && s.period_index === index);
     };
 
     return (
@@ -97,16 +94,16 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({ grade, classroom, onGrade
             <div className="overflow-x-auto p-6">
                 {loading ? (
                     <div className="py-24 flex justify-center"><LoadingSpinner /></div>
-                ) : scheduleData.length > 0 ? (
+                ) : (
                     <div className="min-w-[900px]">
                         {/* Time Headers */}
                         <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(140px,1fr))] gap-4 mb-4">
                             <div className="font-bold text-slate-300 text-[10px] text-center self-end pb-2 uppercase tracking-widest">Day</div>
-                            {displayPeriods.map((time, i) => (
-                                <div key={i} className="text-center bg-white rounded-2xl py-3 shadow-sm border border-slate-100 relative overflow-hidden">
-                                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-200 to-indigo-200"></div>
-                                    <div className="text-[10px] font-black text-slate-300 mb-0.5 tracking-wide">PERIOD {i + 1}</div>
-                                    <span className="text-sm font-bold text-slate-600 block">{time}</span>
+                            {displayPeriods.map((period, i) => (
+                                <div key={i} className={`text-center rounded-2xl py-3 shadow-sm border border-slate-100 relative overflow-hidden ${period.isBreak ? 'bg-slate-50 opacity-80' : 'bg-white'}`}>
+                                    <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${period.isBreak ? 'from-slate-200 to-slate-300' : 'from-purple-200 to-indigo-200'}`}></div>
+                                    <div className="text-[10px] font-black text-slate-300 mb-0.5 tracking-wide uppercase">{period.label}</div>
+                                    <span className="text-sm font-bold text-slate-600 block">{period.time}</span>
                                 </div>
                             ))}
                         </div>
@@ -125,10 +122,22 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({ grade, classroom, onGrade
                                     </div>
 
                                     {/* Subject Cards */}
-                                    {displayPeriods.map((time, i) => {
-                                        const entry = getEntry(day, time);
+                                    {displayPeriods.map((period, i) => {
+                                        if (period.isBreak) {
+                                            return (
+                                                 <div key={i} className="rounded-2xl flex items-center justify-center bg-slate-50/50 border border-slate-100 border-dashed">
+                                                     <span className="text-xs font-medium text-slate-400">พัก</span>
+                                                 </div>
+                                            );
+                                        }
+
+                                        const entry = getEntry(day, period.index);
                                         return (
-                                            <div key={i} className={`relative p-3 rounded-2xl flex flex-col justify-between items-start text-left min-h-[100px] transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${entry ? `bg-white border-2 ${style.border} shadow-sm` : 'bg-slate-50/50 border border-slate-100 border-dashed'}`}>
+                                            <div 
+                                                key={i} 
+                                                onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(day, period.index, period.time, entry)}
+                                                className={`relative p-3 rounded-2xl flex flex-col justify-between items-start text-left min-h-[100px] transition-all duration-300 hover:-translate-y-1 hover:shadow-lg cursor-pointer ${entry ? `bg-white border-2 ${style.border} shadow-sm` : 'bg-slate-50/30 border border-slate-100 hover:bg-white hover:border-purple-200'}`}
+                                            >
                                                 {entry ? (
                                                     <>
                                                         <div className="w-full">
@@ -143,8 +152,8 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({ grade, classroom, onGrade
                                                         </div>
                                                     </>
                                                 ) : (
-                                                    <div className="w-full h-full flex items-center justify-center">
-                                                         <span className="text-slate-200 text-2xl opacity-20">●</span>
+                                                    <div className="w-full h-full flex items-center justify-center group-hover:opacity-100 opacity-0 transition-opacity">
+                                                         <span className="text-slate-400 text-2xl font-light">+</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -153,12 +162,6 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({ grade, classroom, onGrade
                                 </div>
                             )})}
                         </div>
-                    </div>
-                ) : (
-                     <div className="text-center py-20 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 mx-4">
-                        <span className="text-6xl block mb-4 grayscale opacity-50">📅</span>
-                        <h3 className="text-xl font-bold text-slate-700">ไม่พบตารางเรียน</h3>
-                        <p className="text-slate-500 text-sm mt-1">ยังไม่มีข้อมูลตารางเรียนสำหรับชั้น {grade}/{classroom}</p>
                     </div>
                 )}
             </div>

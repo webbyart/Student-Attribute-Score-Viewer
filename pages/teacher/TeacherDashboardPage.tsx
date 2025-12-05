@@ -14,7 +14,8 @@ import {
     getTimetable,
     deleteUser,
     registerStudent,
-    bulkRegisterStudents
+    bulkRegisterStudents,
+    createTimetableEntry // NEW
 } from '../../services/api';
 import { Task, TaskCategory, TaskCategoryLabel, getCategoryColor, TimetableEntry } from '../../types';
 import { useTeacherAuth } from '../../contexts/TeacherAuthContext';
@@ -26,6 +27,7 @@ import DayEventsModal from '../../components/ui/DayEventsModal';
 import TaskDetailModal from '../../components/ui/TaskDetailModal';
 import TimetableGrid from '../../components/ui/TimetableGrid';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import FileChip from '../../components/ui/FileChip'; // Import FileChip
 
 const TeacherDashboardPage: React.FC = () => {
     const { teacher } = useTeacherAuth();
@@ -64,12 +66,27 @@ const TeacherDashboardPage: React.FC = () => {
         subject: '',
         description: '',
         dueDate: '',
-        category: TaskCategory.CLASS_SCHEDULE,
+        category: TaskCategory.CLASS_SCHEDULE, // Default
         priority: 'Medium',
         targetGrade: 'ม.3',
         targetClassroom: '3',
         targetStudentId: ''
     });
+
+    // Timetable Specific Form State (For Modal)
+    const [isTimetableModalOpen, setIsTimetableModalOpen] = useState(false);
+    const [timetableFormData, setTimetableFormData] = useState({
+        day_of_week: 'Monday',
+        period_index: 1,
+        period_time: '08:15 - 09:05',
+        room: '',
+        subject: '',
+        teacher: '',
+        grade: 'ม.3',
+        classroom: '3'
+    });
+
+    // Attachment State
     const [files, setFiles] = useState<File[]>([]);
     const [existingAttachments, setExistingAttachments] = useState<string[]>([]);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -129,20 +146,46 @@ const TeacherDashboardPage: React.FC = () => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
+    const handleTimetableChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        setTimetableFormData({ ...timetableFormData, [e.target.name]: e.target.value });
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+        }
+    };
+
+    const removeFile = (index: number) => {
+        setFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const removeExistingAttachment = (index: number) => {
+        setExistingAttachments(prev => prev.filter((_, i) => i !== index));
+    };
+
     const handleEditTask = (task: Task) => {
+        // Format date for datetime-local input (YYYY-MM-DDTHH:mm)
+        let formattedDate = '';
+        if (task.dueDate) {
+            const d = new Date(task.dueDate);
+            // Adjust to local ISO string somewhat manually to avoid UTC conversion issues in simple inputs
+            const pad = (n: number) => n < 10 ? '0' + n : n;
+            formattedDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
         setFormData({
             title: task.title,
             subject: task.subject,
             description: task.description,
-            // Extract YYYY-MM-DD from ISO or simple date string
-            dueDate: task.dueDate ? task.dueDate.split('T')[0] : '',
+            dueDate: formattedDate,
             category: task.category,
             priority: task.priority || 'Medium',
             targetGrade: task.targetGrade,
             targetClassroom: task.targetClassroom,
             targetStudentId: task.targetStudentId || ''
         });
-        setExistingAttachments(task.attachments);
+        setExistingAttachments(task.attachments || []);
         setFiles([]);
         setEditingTaskId(task.id);
         setActiveTab('post');
@@ -173,30 +216,33 @@ const TeacherDashboardPage: React.FC = () => {
         setIsSubmitting(true);
         setMessage('');
 
-        const uploadedUrls: string[] = [];
-        for (const file of files) {
-            const url = await uploadFile(file);
-            if (url) uploadedUrls.push(url);
-        }
-
-        const allAttachments = [...existingAttachments, ...uploadedUrls];
-
-        const taskPayload = {
-            id: editingTaskId || `task-${Date.now()}`,
-            ...formData,
-            targetStudentId: formData.targetStudentId.trim() === '' ? undefined : formData.targetStudentId.trim(),
-            // Ensure simple YYYY-MM-DD format as requested
-            dueDate: formData.dueDate, 
-            priority: formData.priority as 'High'|'Medium'|'Low',
-            attachments: allAttachments,
-            createdBy: teacher.name,
-            createdAt: editingTaskId ? undefined : new Date().toISOString(),
-            isCompleted: false
-        };
-
         try {
+            // Upload new files
+            const uploadedUrls: string[] = [];
+            for (const file of files) {
+                const url = await uploadFile(file);
+                if (url) uploadedUrls.push(url);
+            }
+
+            const allAttachments = [...existingAttachments, ...uploadedUrls];
+
+            // Ensure proper ISO date string
+            const isoDate = new Date(formData.dueDate).toISOString();
+
+            const taskPayload = {
+                id: editingTaskId || `task-${Date.now()}`,
+                ...formData,
+                targetStudentId: formData.targetStudentId.trim() === '' ? undefined : formData.targetStudentId.trim(),
+                dueDate: isoDate, 
+                priority: formData.priority as 'High'|'Medium'|'Low',
+                attachments: allAttachments,
+                createdBy: teacher.name,
+                createdAt: editingTaskId ? undefined : new Date().toISOString(),
+                isCompleted: false
+            };
+
             if (editingTaskId) {
-                 const result = await updateTask({
+                const result = await updateTask({
                     id: editingTaskId,
                     ...taskPayload
                 });
@@ -224,6 +270,64 @@ const TeacherDashboardPage: React.FC = () => {
         }
         setIsSubmitting(false);
     };
+
+    // Callback when user double clicks a grid cell
+    const handleSlotDoubleClick = (day: string, periodIndex: number, time: string, currentEntry?: TimetableEntry) => {
+        if (currentEntry) {
+            // Edit existing
+            setTimetableFormData({
+                day_of_week: currentEntry.day_of_week,
+                period_index: currentEntry.period_index,
+                period_time: currentEntry.period_time,
+                room: currentEntry.room || '',
+                subject: currentEntry.subject,
+                teacher: currentEntry.teacher,
+                grade: currentEntry.grade,
+                classroom: currentEntry.classroom
+            });
+        } else {
+            // Create new for this slot
+            setTimetableFormData({
+                day_of_week: day,
+                period_index: periodIndex,
+                period_time: time,
+                room: '',
+                subject: '',
+                teacher: teacher?.name || '',
+                grade: scheduleGrade,
+                classroom: scheduleClassroom
+            });
+        }
+        setIsTimetableModalOpen(true);
+    };
+
+    const handleTimetableSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!teacher) return;
+        setIsSubmitting(true);
+
+        try {
+            const timetableEntry = {
+                id: `tt-${Date.now()}`,
+                ...timetableFormData,
+                teacher: timetableFormData.teacher || teacher.name, 
+            };
+            
+            const result = await createTimetableEntry(timetableEntry);
+            if (result.success) {
+                // alert('บันทึกตารางเรียนสำเร็จ');
+                setIsTimetableModalOpen(false);
+                loadSchedule(); // Refresh grid
+                // Reset subject/room but keep context
+                setTimetableFormData({ ...timetableFormData, subject: '', room: '' });
+            } else {
+                 alert('เกิดข้อผิดพลาด: ' + result.message);
+            }
+        } catch (e: any) {
+            alert('Error: ' + e.message);
+        }
+        setIsSubmitting(false);
+    }
 
     const handleDeleteTask = async (id: string) => {
         setTaskToDelete(id);
@@ -289,7 +393,7 @@ const TeacherDashboardPage: React.FC = () => {
                  password, 
                  grade, 
                  classroom,
-                 profile_image: profileImageUrl // Key matches backend column
+                 profile_image: profileImageUrl 
              });
         }
         
@@ -321,17 +425,12 @@ const TeacherDashboardPage: React.FC = () => {
     // --- CSV Helper Functions ---
 
     const handleExportCSV = () => {
-        // Headers consistent with import expectations
         const headers = ["student_id", "student_name", "email", "grade", "classroom", "password"];
-        
-        // Use filteredUsers (current view) or all users of current type
         const dataToExport = filteredUsers.length > 0 ? filteredUsers : users;
 
-        // Convert to CSV string
         const csvRows = [
             headers.join(','),
             ...dataToExport.map(user => {
-                // Ensure values don't have commas that break CSV
                 const safe = (val: string) => `"${String(val || '').replace(/"/g, '""')}"`;
                 return [
                     safe(user.student_id || user.teacher_id),
@@ -339,12 +438,12 @@ const TeacherDashboardPage: React.FC = () => {
                     safe(user.email),
                     safe(user.grade || ''),
                     safe(user.classroom || ''),
-                    safe('123456') // Placeholder or skip password for security
+                    safe('123456') 
                 ].join(',');
             })
         ];
         
-        const csvString = '\uFEFF' + csvRows.join('\n'); // Add BOM for Excel Thai support
+        const csvString = '\uFEFF' + csvRows.join('\n'); 
         const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -370,29 +469,24 @@ const TeacherDashboardPage: React.FC = () => {
             const text = e.target?.result as string;
             if (!text) return;
 
-            // Simple CSV Parser
             const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
             const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
             
             const newStudents = [];
 
             for (let i = 1; i < lines.length; i++) {
-                // Handle split by comma but ignore commas inside quotes
                 const currentLine = lines[i];
-                // Regex matches: "quoted,text", or unquoted,text
                 const matches = currentLine.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || currentLine.split(',');
                 
                 const values = matches.map((val: string) => val.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
 
-                if (values.length >= 2) { // Minimum check
+                if (values.length >= 2) { 
                     const entry: any = {};
-                    // Map known headers
                     const getCol = (name: string) => {
                         const idx = headers.findIndex(h => h.toLowerCase().includes(name));
                         return idx !== -1 ? values[idx] : '';
                     };
 
-                    // Student mapping
                     if (userType === 'student') {
                         entry.student_id = getCol('student_id') || values[0];
                         entry.student_name = getCol('name') || values[1];
@@ -400,7 +494,7 @@ const TeacherDashboardPage: React.FC = () => {
                         entry.grade = getCol('grade') || 'ม.3';
                         entry.classroom = getCol('classroom') || '3';
                         entry.password = getCol('password') || '123456';
-                        entry.profile_image = ''; // Default empty
+                        entry.profile_image = ''; 
                         
                         if (entry.student_id && entry.student_name) newStudents.push(entry);
                     }
@@ -428,7 +522,6 @@ const TeacherDashboardPage: React.FC = () => {
                 alert('ไม่พบข้อมูลที่ถูกต้องในไฟล์ CSV');
             }
             
-            // Reset input
             if (fileInputRef.current) fileInputRef.current.value = '';
         };
         reader.readAsText(file);
@@ -464,9 +557,7 @@ const TeacherDashboardPage: React.FC = () => {
 
     const filteredUsers = users.filter(u => {
         const term = userSearch.toLowerCase();
-        // Combine name fields checks and safe string conversion
         const name = String(u.student_name || u.full_name || u.name || '').toLowerCase();
-        // Safe string conversion for IDs which might be numbers from Google Sheet
         const studentId = u.student_id ? String(u.student_id).toLowerCase() : '';
         const teacherId = u.teacher_id ? String(u.teacher_id).toLowerCase() : '';
         const email = String(u.email || '').toLowerCase();
@@ -474,7 +565,6 @@ const TeacherDashboardPage: React.FC = () => {
         return name.includes(term) || studentId.includes(term) || teacherId.includes(term) || email.includes(term);
     });
 
-    // Stats for Main Menu (Specific Order requested by User)
     const specificCategories = [
         TaskCategory.CLASS_SCHEDULE,
         TaskCategory.EXAM_SCHEDULE,
@@ -512,6 +602,18 @@ const TeacherDashboardPage: React.FC = () => {
                 
                 {activeTab === 'schedule' && (
                     <div className="animate-fade-in space-y-4">
+                         <div className="flex justify-between items-center px-2">
+                             <div className="text-sm text-slate-500 font-medium">
+                                 <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded mr-2">Tip</span>
+                                 ดับเบิลคลิกที่ช่องตารางเพื่อเพิ่ม/แก้ไข
+                             </div>
+                             <button 
+                                onClick={() => setIsTimetableModalOpen(true)}
+                                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-2 px-4 rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 transform hover:scale-105"
+                             >
+                                 <span className="text-lg">+</span> สร้างคาบเรียน
+                             </button>
+                         </div>
                          <TimetableGrid 
                             grade={scheduleGrade}
                             classroom={scheduleClassroom}
@@ -519,6 +621,7 @@ const TeacherDashboardPage: React.FC = () => {
                             onClassroomChange={setScheduleClassroom}
                             scheduleData={scheduleData}
                             loading={scheduleLoading}
+                            onSlotDoubleClick={handleSlotDoubleClick}
                          />
                     </div>
                 )}
@@ -530,15 +633,19 @@ const TeacherDashboardPage: React.FC = () => {
                             {editingTaskId && <button onClick={handleCancelEdit} className="text-xs text-red-500 bg-red-50 px-3 py-1 rounded-full">ยกเลิก</button>}
                         </div>
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">กลุ่มภาระงาน/กิจกรรม</label>
-                                    <select name="category" value={formData.category} onChange={handleChange} className="w-full p-2.5 border rounded-xl bg-purple-50 border-purple-100 text-purple-800 font-medium focus:ring-2 focus:ring-purple-200 focus:outline-none">
+                                    <select name="category" value={formData.category} onChange={handleChange} disabled={!!editingTaskId} className="w-full p-2.5 border rounded-xl bg-purple-50 border-purple-100 text-purple-800 font-medium focus:ring-2 focus:ring-purple-200 focus:outline-none">
                                         {Object.values(TaskCategory).map(cat => <option key={cat} value={cat}>{TaskCategoryLabel[cat]}</option>)}
                                     </select>
                                 </div>
+                            </div>
+                            
+                            {/* STANDARD TASK FORM (Used for ALL categories now) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {formData.category === TaskCategory.HOMEWORK && (
-                                     <div>
+                                    <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">ความสำคัญ (Priority)</label>
                                         <select name="priority" value={formData.priority} onChange={handleChange} className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none">
                                             <option value="Low">Low (ปกติ)</option>
@@ -551,7 +658,7 @@ const TeacherDashboardPage: React.FC = () => {
                             <div className="grid grid-cols-1 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">หัวข้อ/ชื่องาน</label>
-                                    <input name="title" value={formData.title} onChange={handleChange} className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none" required placeholder="เช่น การบ้านคณิตฯ บทที่ 1" />
+                                    <input name="title" value={formData.title} onChange={handleChange} className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none" required placeholder="เช่น การบ้านคณิตฯ, นัดเรียนพิเศษ" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">รายวิชา</label>
@@ -559,7 +666,14 @@ const TeacherDashboardPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">กำหนดส่ง / เวลากิจกรรม</label>
-                                    <input type="date" name="dueDate" value={formData.dueDate} onChange={handleChange} className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none" required />
+                                    <input 
+                                        type="datetime-local" 
+                                        name="dueDate" 
+                                        value={formData.dueDate} 
+                                        onChange={handleChange} 
+                                        className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none" 
+                                        required 
+                                    />
                                 </div>
                             </div>
                             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
@@ -570,6 +684,38 @@ const TeacherDashboardPage: React.FC = () => {
                                 </div>
                             </div>
                             <div><label className="block text-sm font-medium text-slate-700 mb-1">รายละเอียด</label><textarea name="description" value={formData.description} onChange={handleChange} rows={3} className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-purple-200 focus:outline-none" placeholder="รายละเอียดเพิ่มเติม..."></textarea></div>
+                            
+                            {/* File Attachment Section */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">แนบไฟล์ (PDF, Word, Excel, รูปภาพ)</label>
+                                <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 bg-slate-50 hover:bg-slate-100 transition text-center cursor-pointer relative">
+                                    <input 
+                                        type="file" 
+                                        multiple 
+                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                                        onChange={handleFileSelect}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    />
+                                    <div className="flex flex-col items-center justify-center py-2 text-slate-500">
+                                        <svg className="w-8 h-8 mb-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                        <span className="text-sm font-medium">คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวางที่นี่</span>
+                                        <span className="text-xs text-slate-400 mt-1">รองรับไฟล์เอกสารและรูปภาพ</span>
+                                    </div>
+                                </div>
+                                
+                                {/* Selected Files List */}
+                                {(existingAttachments.length > 0 || files.length > 0) && (
+                                    <div className="mt-3 space-y-2">
+                                        {existingAttachments.map((url, i) => (
+                                            <FileChip key={`old-${i}`} filename={url} onRemove={() => removeExistingAttachment(i)} />
+                                        ))}
+                                        {files.map((file, i) => (
+                                            <FileChip key={`new-${i}`} filename={file.name} onRemove={() => removeFile(i)} />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="pt-4"><button type="submit" disabled={isSubmitting} className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold py-3.5 rounded-xl hover:shadow-lg disabled:opacity-50 transition flex justify-center items-center gap-2">{isSubmitting ? 'กำลังบันทึก...' : (editingTaskId ? 'บันทึกการแก้ไข' : 'โพสต์งานทันที')}</button>{message && <p className={`text-center mt-3 text-sm font-medium ${message.includes('ผิดพลาด') ? 'text-red-500' : 'text-green-600'}`}>{message}</p>}</div>
                         </form>
                     </Card>
@@ -584,6 +730,12 @@ const TeacherDashboardPage: React.FC = () => {
                                         <div className="flex justify-between items-start">
                                             <div className="flex flex-wrap gap-2 mb-2 items-center">
                                                 <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600`}>{TaskCategoryLabel[task.category]}</span>
+                                                {task.attachments && task.attachments.length > 0 && (
+                                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100">
+                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                                        {task.attachments.length} ไฟล์
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="flex gap-1">
                                                 <button onClick={() => handleEditTask(task)} className="p-1.5 text-blue-500 bg-blue-50 rounded-lg hover:bg-blue-100"><PencilIcon className="w-4 h-4"/></button>
@@ -593,7 +745,7 @@ const TeacherDashboardPage: React.FC = () => {
                                         <h3 className="font-bold text-lg text-slate-800 leading-tight">{task.title}</h3>
                                         <div className="flex justify-between items-center text-xs text-slate-500 mt-2">
                                             <span>{task.subject}</span>
-                                            <span className={`px-2 py-1 rounded-md font-medium ${new Date(task.dueDate) < new Date() ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>{new Date(task.dueDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</span>
+                                            <span className={`px-2 py-1 rounded-md font-medium ${new Date(task.dueDate) < new Date() ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>{new Date(task.dueDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -717,7 +869,9 @@ const TeacherDashboardPage: React.FC = () => {
             {isDayModalOpen && selectedDate && <DayEventsModal date={selectedDate} tasks={selectedDayTasks} onClose={() => setIsDayModalOpen(false)} onTaskClick={handleTaskClickFromModal} />}
             {selectedTaskForModal && <TaskDetailModal task={selectedTaskForModal} onClose={() => setSelectedTaskForModal(null)} />}
             
-            {editingUser && (
+            {/* Edit User Modal, Add User Modal, Timetable Modal... (omitted for brevity, assume same as before) */}
+            {/* ... (Existing modals logic remains identical) ... */}
+             {editingUser && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
                         <div className="p-4 bg-purple-600 text-white flex justify-between items-center"><h3 className="font-bold text-lg">✏️ แก้ไขข้อมูลผู้ใช้งาน</h3><button onClick={() => setEditingUser(null)} className="p-1 hover:bg-white/20 rounded-full transition">✕</button></div>
@@ -733,7 +887,6 @@ const TeacherDashboardPage: React.FC = () => {
                 </div>
             )}
             
-            {/* Add User Modal */}
             {isAddUserModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
@@ -766,6 +919,69 @@ const TeacherDashboardPage: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {isTimetableModalOpen && (
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
+                         <div className="p-4 bg-indigo-600 text-white flex justify-between items-center">
+                            <h3 className="font-bold text-lg flex items-center gap-2">
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                สร้าง/แก้ไข คาบเรียน
+                            </h3>
+                            <button onClick={() => setIsTimetableModalOpen(false)} className="p-1 hover:bg-white/20 rounded-full transition">✕</button>
+                         </div>
+                         <form onSubmit={handleTimetableSubmit} className="p-6 space-y-3 bg-indigo-50/30">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">ระดับชั้น</label>
+                                    <input name="grade" value={timetableFormData.grade} onChange={handleTimetableChange} className="w-full p-2.5 border rounded-xl bg-white" placeholder="ม.3" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">ห้อง</label>
+                                    <input name="classroom" value={timetableFormData.classroom} onChange={handleTimetableChange} className="w-full p-2.5 border rounded-xl bg-white" placeholder="3" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">วัน</label>
+                                    <select name="day_of_week" value={timetableFormData.day_of_week} onChange={handleTimetableChange} className="w-full p-2.5 border rounded-xl bg-white">
+                                        <option value="Monday">จันทร์</option>
+                                        <option value="Tuesday">อังคาร</option>
+                                        <option value="Wednesday">พุธ</option>
+                                        <option value="Thursday">พฤหัสบดี</option>
+                                        <option value="Friday">ศุกร์</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">คาบที่</label>
+                                    <input type="number" name="period_index" value={timetableFormData.period_index} onChange={handleTimetableChange} className="w-full p-2.5 border rounded-xl bg-white" min="1" max="10" />
+                                </div>
+                            </div>
+                            <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">เวลา (เช่น 08:30 - 09:20)</label>
+                                    <input name="period_time" value={timetableFormData.period_time} onChange={handleTimetableChange} className="w-full p-2.5 border rounded-xl bg-white" placeholder="08:30 - 09:20" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">วิชา</label>
+                                        <input name="subject" value={timetableFormData.subject} onChange={handleTimetableChange} className="w-full p-2.5 border rounded-xl bg-white" required placeholder="เช่น คณิตศาสตร์" />
+                                </div>
+                                <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">ห้องเรียน</label>
+                                        <input name="room" value={timetableFormData.room} onChange={handleTimetableChange} className="w-full p-2.5 border rounded-xl bg-white" placeholder="เช่น 303" />
+                                </div>
+                            </div>
+                            <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">ครูผู้สอน (ว่างไว้ = ชื่อคุณ)</label>
+                                    <input name="teacher" value={timetableFormData.teacher} onChange={handleTimetableChange} className="w-full p-2.5 border rounded-xl bg-white" placeholder={teacher?.name} />
+                            </div>
+                            
+                            <button type="submit" disabled={isSubmitting} className="w-full mt-4 bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">{isSubmitting ? 'กำลังบันทึก...' : 'บันทึกลงตาราง'}</button>
+                         </form>
+                    </div>
+                </div>
+            )}
+
             {viewingStudentId && <StudentDetailModal studentId={viewingStudentId} onClose={() => setViewingStudentId(null)} />}
         </div>
     );
