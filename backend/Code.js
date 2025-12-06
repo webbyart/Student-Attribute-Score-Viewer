@@ -1,7 +1,7 @@
 
 /**
  * BACKEND CODE FOR GOOGLE APPS SCRIPT
- * Version: 25.11 (Fix Line Deployment)
+ * Version: 25.13 (Add Created At & Description to Flex)
  */
 
 const DEFAULT_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
@@ -36,7 +36,7 @@ function handleRequest(e) {
 
     if (!payload || Object.keys(payload).length === 0) payload = params;
 
-    if (!action) return createJSONOutput({ status: 'ok', version: '25.11' });
+    if (!action) return createJSONOutput({ status: 'ok', version: '25.13' });
 
     let ss;
     try { ss = SpreadsheetApp.openById(sheetId); } 
@@ -296,7 +296,7 @@ function saveSettings(ss, payload) {
   return { success: true };
 }
 
-function checkHealth(ss) { return { version: '25.11', tables: [] }; }
+function checkHealth(ss) { return { version: '25.13', tables: [] }; }
 
 function setupSheet() {
   const ss = SpreadsheetApp.openById(DEFAULT_SHEET_ID);
@@ -347,26 +347,7 @@ function sendLineMessage(token, groupId, messages) {
   }
 }
 
-function testLineMessage(ss) {
-  const settings = getSettings(ss);
-  const token = settings['line_channel_access_token'] || DEFAULT_LINE_TOKEN;
-  const groupId = settings['test_group_id'] || DEFAULT_GROUP_ID;
-  
-  const messages = [{
-    "type": "text",
-    "text": "✅ การเชื่อมต่อ LINE สำเร็จ (v25.11)!\nนี่คือข้อความทดสอบจากระบบ"
-  }];
-  
-  return sendLineMessage(token, groupId, messages);
-}
-
-function broadcastTaskLineMessage(ss, task) {
-  const settings = getSettings(ss);
-  const token = settings['line_channel_access_token'] || DEFAULT_LINE_TOKEN;
-  const groupId = settings['test_group_id'] || DEFAULT_GROUP_ID;
-
-  if (!token) return;
-
+function createTaskFlexMessage(task) {
   // 1. Determine Colors & Labels based on Category
   let headerColor = "#1DB446"; // Default Green
   let categoryLabel = "กิจกรรม";
@@ -394,17 +375,184 @@ function broadcastTaskLineMessage(ss, task) {
       break;
   }
   
-  // 2. Format Date
-  const dateObj = new Date(task.due_date || task.dueDate);
-  const dateStr = dateObj.toLocaleDateString('th-TH', {day: 'numeric', month: 'short', year: 'numeric'});
-  const timeStr = dateObj.toLocaleTimeString('th-TH', {hour: '2-digit', minute: '2-digit'});
+  // 2. Format Dates
+  const dueDateObj = new Date(task.due_date || task.dueDate);
+  const dueDateStr = dueDateObj.toLocaleDateString('th-TH', {day: 'numeric', month: 'short', year: 'numeric'});
+  const dueTimeStr = dueDateObj.toLocaleTimeString('th-TH', {hour: '2-digit', minute: '2-digit'});
+
+  const createdDateObj = new Date(task.created_at || new Date());
+  const createdDateStr = createdDateObj.toLocaleDateString('th-TH', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'});
 
   // 3. Attachments Logic
   const attachments = task.attachments ? (Array.isArray(task.attachments) ? task.attachments : JSON.parse(task.attachments)) : [];
   const fileCount = attachments.length;
 
-  // 4. Construct Flex Bubble
-  const bubble = {
+  // 4. Construct Flex Bubble Body
+  const bubbleBodyContents = [
+      {
+        "type": "text",
+        "text": task.title,
+        "weight": "bold",
+        "size": "xl",
+        "wrap": true,
+        "margin": "none"
+      },
+      {
+        "type": "text",
+        "text": "วิชา " + (task.subject || '-'),
+        "size": "sm",
+        "color": "#888888",
+        "margin": "sm"
+      },
+      {
+        "type": "separator",
+        "margin": "md"
+      },
+      // Date Row
+      {
+        "type": "box",
+        "layout": "baseline",
+        "margin": "md",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "📅 กำหนด:",
+            "color": "#aaaaaa",
+            "size": "sm",
+            "flex": 2
+          },
+          {
+            "type": "text",
+            "text": `${dueDateStr} ${dueTimeStr} น.`,
+            "wrap": true,
+            "color": "#D32F2F",
+            "size": "sm",
+            "flex": 5,
+            "weight": "bold"
+          }
+        ]
+      },
+      // Target Row
+      {
+        "type": "box",
+        "layout": "baseline",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "👥 สำหรับ:",
+            "color": "#aaaaaa",
+            "size": "sm",
+            "flex": 2
+          },
+          {
+            "type": "text",
+            "text": `ชั้น ${task.targetGrade || task.target_grade || '-'}/${task.targetClassroom || task.target_classroom || '-'}`,
+            "wrap": true,
+            "color": "#666666",
+            "size": "sm",
+            "flex": 5
+          }
+        ]
+      },
+      // Creator Row
+      {
+        "type": "box",
+        "layout": "baseline",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "👤 ผู้แจ้ง:",
+            "color": "#aaaaaa",
+            "size": "sm",
+            "flex": 2
+          },
+          {
+            "type": "text",
+            "text": task.createdBy || task.created_by || 'Admin',
+            "wrap": true,
+            "color": "#666666",
+            "size": "sm",
+            "flex": 5
+          }
+        ]
+      },
+      // Created At Row
+      {
+        "type": "box",
+        "layout": "baseline",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "🕒 สร้างเมื่อ:",
+            "color": "#aaaaaa",
+            "size": "sm",
+            "flex": 2
+          },
+          {
+            "type": "text",
+            "text": createdDateStr + " น.",
+            "wrap": true,
+            "color": "#888888",
+            "size": "sm",
+            "flex": 5
+          }
+        ]
+      },
+      {
+        "type": "separator",
+        "margin": "md"
+      },
+      // Description Section
+      {
+        "type": "text",
+        "text": "รายละเอียดเพิ่มเติม:",
+        "size": "xs",
+        "color": "#aaaaaa",
+        "margin": "md",
+        "weight": "bold"
+      },
+      {
+        "type": "text",
+        "text": task.description || '-',
+        "wrap": true,
+        "color": "#333333",
+        "size": "sm",
+        "margin": "sm"
+      }
+  ];
+
+  // 5. Add Attachment Indicator if exists
+  if (fileCount > 0) {
+     bubbleBodyContents.push({
+         "type": "separator",
+         "margin": "md"
+     });
+     bubbleBodyContents.push({
+         "type": "box",
+         "layout": "horizontal",
+         "margin": "md",
+         "spacing": "md",
+         "alignItems": "center",
+         "backgroundColor": "#F1F8E9",
+         "cornerRadius": "md",
+         "paddingAll": "10px",
+         "contents": [
+             { "type": "text", "text": "📎", "size": "lg" },
+             { "type": "text", "text": `มีไฟล์แนบ ${fileCount} รายการ`, "size": "sm", "color": "#33691E", "weight": "bold", "flex": 1 },
+             { "type": "text", "text": "✔", "color": "#1DB446", "weight": "bold", "size": "lg" }
+         ]
+     });
+  }
+
+  // 6. Build Final Flex Object
+  const flexMessage = {
+    "type": "flex",
+    "altText": `[ใหม่] ${categoryLabel}: ${task.title}`,
+    "contents": {
       "type": "bubble",
       "header": {
         "type": "box",
@@ -424,111 +572,7 @@ function broadcastTaskLineMessage(ss, task) {
       "body": {
         "type": "box",
         "layout": "vertical",
-        "contents": [
-          {
-            "type": "text",
-            "text": task.title,
-            "weight": "bold",
-            "size": "xl",
-            "wrap": true,
-            "margin": "none"
-          },
-          {
-            "type": "text",
-            "text": `วิชา${task.subject}`,
-            "size": "sm",
-            "color": "#888888",
-            "margin": "sm"
-          },
-          {
-            "type": "separator",
-            "margin": "md"
-          },
-          // Date Row
-          {
-            "type": "box",
-            "layout": "baseline",
-            "margin": "md",
-            "spacing": "sm",
-            "contents": [
-              {
-                "type": "text",
-                "text": "📅 กำหนด:",
-                "color": "#aaaaaa",
-                "size": "sm",
-                "flex": 2
-              },
-              {
-                "type": "text",
-                "text": `${dateStr} ${timeStr} น.`,
-                "wrap": true,
-                "color": "#D32F2F",
-                "size": "sm",
-                "flex": 5,
-                "weight": "bold"
-              }
-            ]
-          },
-          // Target Row
-          {
-            "type": "box",
-            "layout": "baseline",
-            "spacing": "sm",
-            "contents": [
-              {
-                "type": "text",
-                "text": "👥 สำหรับ:",
-                "color": "#aaaaaa",
-                "size": "sm",
-                "flex": 2
-              },
-              {
-                "type": "text",
-                "text": `ชั้น ${task.targetGrade || task.target_grade || '-'}/${task.targetClassroom || task.target_classroom || '-'}`,
-                "wrap": true,
-                "color": "#666666",
-                "size": "sm",
-                "flex": 5
-              }
-            ]
-          },
-          // Creator Row
-          {
-            "type": "box",
-            "layout": "baseline",
-            "spacing": "sm",
-            "contents": [
-              {
-                "type": "text",
-                "text": "👤 ผู้แจ้ง:",
-                "color": "#aaaaaa",
-                "size": "sm",
-                "flex": 2
-              },
-              {
-                "type": "text",
-                "text": task.createdBy || task.created_by || 'Admin',
-                "wrap": true,
-                "color": "#666666",
-                "size": "sm",
-                "flex": 5
-              }
-            ]
-          },
-          {
-            "type": "separator",
-            "margin": "md"
-          },
-          // Description
-          {
-            "type": "text",
-            "text": task.description || '-',
-            "wrap": true,
-            "color": "#333333",
-            "size": "sm",
-            "margin": "md"
-          }
-        ]
+        "contents": bubbleBodyContents
       },
       "footer": {
         "type": "box",
@@ -540,61 +584,50 @@ function broadcastTaskLineMessage(ss, task) {
             "height": "sm",
             "action": {
               "type": "uri",
-              "label": "ดูรายละเอียด",
-              "uri": "https://liff.line.me/1657930814-J8kyXqW1" 
+              "label": "ดูรายละเอียดในเว็บ",
+              "uri": "https://student-homework.netlify.app/" 
             },
             "color": headerColor
           }
         ],
         "paddingAll": "20px"
       }
+    }
   };
 
-  // Add Attachment Indicator
-  if (fileCount > 0) {
-     bubble.body.contents.push({
-         "type": "separator",
-         "margin": "md"
-     });
-     bubble.body.contents.push({
-         "type": "box",
-         "layout": "horizontal",
-         "margin": "md",
-         "spacing": "md",
-         "alignItems": "center",
-         "backgroundColor": "#F1F8E9",
-         "cornerRadius": "md",
-         "paddingAll": "10px",
-         "contents": [
-             {
-                 "type": "text",
-                 "text": "📎",
-                 "size": "lg"
-             },
-             {
-                 "type": "text",
-                 "text": `มีไฟล์แนบ ${fileCount} รายการ`,
-                 "size": "sm",
-                 "color": "#33691E",
-                 "weight": "bold",
-                 "flex": 1
-             },
-             {
-                 "type": "text",
-                 "text": "✔",
-                 "color": "#1DB446",
-                 "weight": "bold",
-                 "size": "lg"
-             }
-         ]
-     });
-  }
+  return flexMessage;
+}
 
-  const flexMessage = {
-    "type": "flex",
-    "altText": `[ใหม่] ${categoryLabel}: ${task.title}`,
-    "contents": bubble
+function broadcastTaskLineMessage(ss, task) {
+  const settings = getSettings(ss);
+  const token = settings['line_channel_access_token'] || DEFAULT_LINE_TOKEN;
+  const groupId = settings['test_group_id'] || DEFAULT_GROUP_ID;
+
+  if (!token) return;
+
+  const flexMessage = createTaskFlexMessage(task);
+  sendLineMessage(token, groupId, [flexMessage]);
+}
+
+function testLineMessage(ss) {
+  const settings = getSettings(ss);
+  const token = settings['line_channel_access_token'] || DEFAULT_LINE_TOKEN;
+  const groupId = settings['test_group_id'] || DEFAULT_GROUP_ID;
+  
+  // Create Mock Task with full details
+  const mockTask = {
+      title: "ทดสอบส่งเข้า กลุ่ม",
+      subject: "วิชาวิทยาการคำนวณ",
+      description: "นี่คือตัวอย่างการแสดงผลแบบ Flex Message บน LINE (แสดงเวลาสร้างและรายละเอียดครบถ้วน)",
+      due_date: new Date(new Date().getTime() + 86400000).toISOString(), // Tomorrow
+      created_at: new Date().toISOString(), // Now
+      category: "HOMEWORK",
+      target_grade: "ม.3",
+      target_classroom: "3",
+      created_by: "ART",
+      attachments: ["file1.pdf"]
   };
   
-  sendLineMessage(token, groupId, [flexMessage]);
+  const flexMessage = createTaskFlexMessage(mockTask);
+  return sendLineMessage(token, groupId, [flexMessage]);
 }

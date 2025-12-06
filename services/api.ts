@@ -4,7 +4,7 @@ import { StudentData, Student, Task, Teacher, TaskCategory, Notification, Timeta
 // --- Configuration ---
 export const GOOGLE_SHEET_ID = '1Az2q3dmbbQBHOwZbjH8gk3t2THGYUbWvW82CFI1x2cE';
 // ⚠️⚠️ IMPORTANT: Replace this URL with your NEW deployment URL ⚠️⚠️
-export const API_URL = 'https://script.google.com/macros/s/AKfycbyVe80VSSEgx3Cm1Y81fKZ0CfLPHnJZlZUIANjiavIevMQQc5bSuDPex61Am08HAxo/exec'; 
+export const API_URL = 'https://script.google.com/macros/s/AKfycbxw6bW3lTZQ-RJJVjFpM54BeguItmA8byzsyqM6nYARbFcA6XRZ2AwyWClyt6oJFJoG/exec'; 
 
 const DEFAULT_GROUP_ID = 'C43845dc7a6bc2eb304ce0b9967aef5f5';
 
